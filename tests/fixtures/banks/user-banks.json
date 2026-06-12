@@ -1,0 +1,11 @@
+[
+  {
+    "title": "User Bank",
+    "pedalboards": [
+      {
+        "title": "Dave",
+        "bundle": "/root/.pedalboards/Dave.pedalboard"
+      }
+    ]
+  }
+]

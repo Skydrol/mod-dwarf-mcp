@@ -1,0 +1,18 @@
+{
+  "current": 0,
+  "snapshots": [
+    {
+      "name": "Default",
+      "data": {
+        "Gain": {
+          "preset": "",
+          "bypassed": false,
+          "parameters": {},
+          "ports": {
+            "Gain": 0
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CommandRunner } from "../clients/sshClient.js";
+import type { HttpClient } from "../clients/httpClient.js";
+import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import { BankService } from "../services/bankService.js";
+import { DeviceService } from "../services/deviceService.js";
+import { DryBundleService } from "../services/dryBundleService.js";
+import { ImportBundleService } from "../services/importBundleService.js";
+import { PedalboardService } from "../services/pedalboardService.js";
+import { PluginService } from "../services/pluginService.js";
+import { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
+import { SnapshotService } from "../services/snapshotService.js";
+import { registerTools } from "./toolRegistry.js";
+
+export interface ServerDependencies {
+  ssh: CommandRunner;
+  http: HttpClient;
+  writeHttp?: WriteHttpClient | null;
+  writeToolsEnabled?: boolean;
+}
+
+export function createMcpServer(deps: ServerDependencies): McpServer {
+  const server = new McpServer({
+    name: "mod-dwarf-mcp",
+    version: "0.1.0"
+  });
+
+  const pluginService = new PluginService(deps.ssh);
+  const pedalboardService = new PedalboardService(deps.ssh);
+  const context = {
+    deviceService: new DeviceService(deps.ssh),
+    pluginService,
+    pedalboardService,
+    bankService: new BankService(deps.ssh),
+    snapshotService: new SnapshotService(deps.ssh),
+    pedalboardPlannerService: new PedalboardPlannerService(pluginService, pedalboardService),
+    dryBundleService: new DryBundleService(pluginService),
+    importBundleService: new ImportBundleService(
+      pedalboardService,
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true
+    )
+  };
+
+  void deps.http;
+  registerTools(server, context);
+  return server;
+}
+
+export async function runStdioServer(deps: ServerDependencies): Promise<void> {
+  const server = createMcpServer(deps);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

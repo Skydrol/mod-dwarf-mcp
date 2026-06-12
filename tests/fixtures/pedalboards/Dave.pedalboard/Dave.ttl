@@ -1,0 +1,28 @@
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+@prefix ingen: <http://drobilla.net/ns/ingen#> .
+@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .
+@prefix pedal: <http://moddevices.com/ns/modpedal#> .
+
+_:b1
+    ingen:tail <capture_1> ;
+    ingen:head <Gain/In> .
+
+_:b2
+    ingen:tail <Gain/Out> ;
+    ingen:head <playback_1> .
+
+<Gain>
+    ingen:canvasX 100.0 ;
+    ingen:canvasY 200.0 ;
+    ingen:enabled true ;
+    lv2:port <Gain/In> , <Gain/Out> , <Gain/Gain> , <Gain/:bypass> ;
+    lv2:prototype <http://moddevices.com/plugins/mod-devel/Gain> ;
+    pedal:instanceNumber 0 ;
+    a ingen:Block .
+
+<Gain/Gain>
+    ingen:value 0.0 ;
+    a lv2:ControlPort , lv2:InputPort .
+
+<>
+    doap:name "Dave" .

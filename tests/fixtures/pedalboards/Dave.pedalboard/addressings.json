@@ -1,0 +1,11 @@
+{
+  "/hmi/knob1": [
+    {
+      "instance": "/graph/Gain",
+      "label": "Gain",
+      "port": "Gain",
+      "minimum": -20,
+      "maximum": 20
+    }
+  ]
+}

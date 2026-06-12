@@ -1,0 +1,8 @@
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<effect.ttl>
+  lv2:appliesTo <http://moddevices.com/plugins/mod-devel/Gain> ;
+  a pset:Preset ;
+  rdfs:seeAlso <effect.ttl> .
