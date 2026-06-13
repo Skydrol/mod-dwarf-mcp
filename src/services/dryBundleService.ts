@@ -143,18 +143,141 @@ export class DryBundleService {
 
   private renderMainTtl(title: string, signalChain: ResolvedPlugin[]): string {
     const prefixes = [
+      "@prefix atom:  <http://lv2plug.in/ns/ext/atom#> .",
       "@prefix doap:  <http://usefulinc.com/ns/doap#> .",
       "@prefix ingen: <http://drobilla.net/ns/ingen#> .",
       "@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .",
+      "@prefix midi:  <http://lv2plug.in/ns/ext/midi#> .",
       "@prefix pedal: <http://moddevices.com/ns/modpedal#> .",
+      "@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .",
       "",
       ""
     ].join("\n");
-    const connections = this.renderConnections(signalChain);
-    const blocks = signalChain
+
+    const { ttl: connectionsTtl, arcs } = this.renderConnectionsData(signalChain);
+    const blocksTtl = signalChain
       .map((plugin, index) => this.renderPluginBlock(plugin, index))
       .join("\n");
-    return `${prefixes}${connections}${blocks}\n<>\n    doap:name "${escapeTtlString(title)}" .\n`;
+
+    const blockRefs =
+      signalChain.length > 0
+        ? signalChain.map((p) => `<${safeInstance(p.plan)}>`).join(" ,\n                ")
+        : "";
+    const arcRefs = arcs.length > 0 ? arcs.join(" ,\n              ") : "";
+
+    const standardPorts = [
+      "<:bpb>",
+      "<:bpm>",
+      "<:rolling>",
+      "<midi_separated_mode>",
+      "<midi_loopback>",
+      "<control_in>",
+      "<control_out>",
+      "<serial_midi_in>",
+      "<serial_midi_out>",
+      "<capture_1>",
+      "<capture_2>",
+      "<playback_1>",
+      "<playback_2>"
+    ];
+
+    const mainStanza = [
+      "<>",
+      `    doap:name "${escapeTtlString(title)}" ;`,
+      '    pedal:unitName "MOD Dwarf" ;',
+      '    pedal:unitModel "dwarf:aarch64-a35" ;',
+      ...(arcs.length > 0 ? [`    ingen:arc ${arcRefs} ;`] : []),
+      ...(signalChain.length > 0 ? [`    ingen:block ${blockRefs} ;`] : []),
+      `    lv2:port ${standardPorts.join(" ,\n             ")} ;`,
+      "    a lv2:Plugin ,",
+      "        ingen:Graph ,",
+      "        pedal:Pedalboard ."
+    ].join("\n");
+
+    const standardPortDefinitions = this.renderStandardPortDefinitions();
+
+    return `${prefixes}${connectionsTtl}${blocksTtl}${mainStanza}\n\n${standardPortDefinitions}\n`;
+  }
+
+  private renderConnectionsData(signalChain: ResolvedPlugin[]): { ttl: string; arcs: string[] } {
+    const connections: string[] = [];
+    const arcs: string[] = [];
+    let arcCount = 1;
+
+    const add = (tail: string, head: string) => {
+      const id = `_:b${arcCount}`;
+      connections.push([id, `    ingen:tail <${tail}> ;`, `    ingen:head <${head}> .`].join("\n"));
+      arcs.push(id);
+      arcCount += 1;
+    };
+
+    if (signalChain.length === 0) {
+      add("capture_1", "playback_1");
+    } else {
+      for (const [tail, head] of pairPorts(["capture_1", "capture_2"], inputRefs(signalChain[0])))
+        add(tail, head);
+      for (let index = 0; index < signalChain.length - 1; index += 1) {
+        for (const [tail, head] of pairPorts(
+          outputRefs(signalChain[index]),
+          inputRefs(signalChain[index + 1])
+        ))
+          add(tail, head);
+      }
+      for (const [tail, head] of pairPorts(outputRefs(signalChain[signalChain.length - 1]), [
+        "playback_1",
+        "playback_2"
+      ]))
+        add(tail, head);
+    }
+
+    return { ttl: `${connections.join("\n\n")}\n\n`, arcs };
+  }
+
+  private renderStandardPortDefinitions(): string {
+    return [
+      "<capture_1>",
+      "    lv2:index 5 ;",
+      '    lv2:symbol "capture_1" ;',
+      "    a lv2:AudioPort ,",
+      "        lv2:InputPort .",
+      "",
+      "<capture_2>",
+      "    lv2:index 6 ;",
+      '    lv2:symbol "capture_2" ;',
+      "    a lv2:AudioPort ,",
+      "        lv2:InputPort .",
+      "",
+      "<playback_1>",
+      "    lv2:index 7 ;",
+      '    lv2:symbol "playback_1" ;',
+      "    a lv2:AudioPort ,",
+      "        lv2:OutputPort .",
+      "",
+      "<playback_2>",
+      "    lv2:index 8 ;",
+      '    lv2:symbol "playback_2" ;',
+      "    a lv2:AudioPort ,",
+      "        lv2:OutputPort .",
+      "",
+      "<:bpb>",
+      "    ingen:value 4.0 ; a lv2:ControlPort , lv2:InputPort .",
+      "<:bpm>",
+      "    ingen:value 120.0 ; a lv2:ControlPort , lv2:InputPort .",
+      "<:rolling>",
+      "    ingen:value 0 ; a lv2:ControlPort , lv2:InputPort .",
+      "<midi_separated_mode>",
+      "    ingen:value 0 ; a lv2:ControlPort , lv2:InputPort .",
+      "<midi_loopback>",
+      "    ingen:value 0 ; a lv2:ControlPort , lv2:InputPort .",
+      "<control_in>",
+      '    lv2:symbol "control_in" ; a atom:AtomPort , lv2:InputPort .',
+      "<control_out>",
+      '    lv2:symbol "control_out" ; a atom:AtomPort , lv2:OutputPort .',
+      "<serial_midi_in>",
+      '    lv2:symbol "serial_midi_in" ; a atom:AtomPort , lv2:InputPort .',
+      "<serial_midi_out>",
+      '    lv2:symbol "serial_midi_out" ; a atom:AtomPort , lv2:OutputPort .'
+    ].join("\n");
   }
 
   private renderConnections(signalChain: ResolvedPlugin[]): string {
