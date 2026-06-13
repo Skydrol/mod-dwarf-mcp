@@ -1,8 +1,8 @@
 # mod-dwarf-mcp
 
-Read-only MCP server for the MOD Dwarf pedalboard platform.
+MCP server for the MOD Dwarf pedalboard platform.
 
-The server inspects a MOD Dwarf over SSH and, where useful in future phases, GET-only HTTP. Phase 1 never writes to the device, never installs packages, never reboots, and never modifies pedalboards, banks, snapshots, or plugins.
+The server inspects a MOD Dwarf over SSH and HTTP. It is primarily a read-only inspection tool, but includes write-gated, opt-in tools for pedalboard generation and management that are disabled by default.
 
 ## Features
 
