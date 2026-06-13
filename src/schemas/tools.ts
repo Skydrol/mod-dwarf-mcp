@@ -112,6 +112,16 @@ export const createPedalboardDryBundleInputSchema = z
 
 export type CreatePedalboardDryBundleInput = z.infer<typeof createPedalboardDryBundleInputSchema>;
 
+export const createLiveGraphAuthoringPlanInputSchema = z
+  .object({
+    plan: pedalboardPlanSchema
+  })
+  .strict();
+
+export type CreateLiveGraphAuthoringPlanInput = z.infer<
+  typeof createLiveGraphAuthoringPlanInputSchema
+>;
+
 const dryBundleValidationSchema = z
   .object({
     pluginUris: z

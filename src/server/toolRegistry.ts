@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
+import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { getDeviceInfoTool } from "../tools/getDeviceInfo.js";
 import { importPedalboardDryBundleTool } from "../tools/importPedalboardDryBundle.js";
 import { inspectPedalboardTool } from "../tools/inspectPedalboard.js";
@@ -158,5 +159,18 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createPedalboardDryBundleTool(input, context)
+  );
+
+  server.registerTool(
+    "create_live_graph_authoring_plan",
+    {
+      title: "Plan live MOD UI graph authoring calls",
+      description:
+        "Dry-run only: validate a pedalboard plan against installed plugins and LV2 metadata, then return the intended MOD UI HTTP calls without executing them.",
+      inputSchema: {
+        plan: pedalboardPlanSchema
+      }
+    },
+    async (input) => createLiveGraphAuthoringPlanTool(input, context)
   );
 }
