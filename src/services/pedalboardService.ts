@@ -98,18 +98,43 @@ export class PedalboardService {
       .filter((entry) => entry.split("/").length === path.split("/").length + 1)
       .sort();
 
-    return bundles.map((bundlePath) => {
-      const basename = bundlePath.split("/").pop() ?? bundlePath;
-      return {
-        title: basename.replace(/\.pedalboard$/, "").replace(/_/g, " "),
+    const summaries: PedalboardSummary[] = [];
+    for (const bundlePath of bundles) {
+      const title = await this.resolvePedalboardTitle(bundlePath, entries);
+      summaries.push({
+        title,
         bundlePath,
         source,
         hasManifest: entrySet.has(`${bundlePath}/manifest.ttl`),
         hasSnapshots: entrySet.has(`${bundlePath}/snapshots.json`),
         hasPresets: entrySet.has(`${bundlePath}/presets.json`),
         hasAddressings: entrySet.has(`${bundlePath}/addressings.json`)
-      };
-    });
+      });
+    }
+    return summaries;
+  }
+
+  private async resolvePedalboardTitle(
+    bundlePath: string,
+    knownEntries: string[]
+  ): Promise<string | null> {
+    const manifestPath = `${bundlePath}/manifest.ttl`;
+    const manifest = knownEntries.includes(manifestPath)
+      ? await readFile(this.ssh, manifestPath)
+      : null;
+    const mainFile = manifest ? extractMainTtlFromManifest(manifest) : null;
+    const mainTtlPath = mainFile
+      ? `${bundlePath}/${mainFile}`
+      : (knownEntries.find(
+          (entry) =>
+            entry.startsWith(`${bundlePath}/`) &&
+            entry.endsWith(".ttl") &&
+            !entry.endsWith("/manifest.ttl")
+        ) ?? null);
+    const mainTtl = mainTtlPath ? await readFile(this.ssh, mainTtlPath) : null;
+    return mainTtl
+      ? (extractDoapName(mainTtl) ?? this.titleFromPath(bundlePath))
+      : this.titleFromPath(bundlePath);
   }
 
   private async findFirstTtl(bundlePath: string): Promise<string | null> {

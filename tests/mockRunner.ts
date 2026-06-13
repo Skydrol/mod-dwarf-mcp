@@ -19,17 +19,37 @@ export class MockRunner implements CommandRunner {
 
     if (command.startsWith("cat ")) return catCommand(command);
     if (command.startsWith("test -f ")) return testFileCommand(command);
-    if (command.includes("/root/.pedalboards") && command.startsWith("find "))
-      return ok("/root/.pedalboards/Dave.pedalboard\n");
+    if (command.includes("Dave.pedalboard") && command.includes("*.ttl"))
+      return ok("/root/.pedalboards/Dave.pedalboard/Dave.ttl\n");
+    if (command.includes("/root/.pedalboards") && command.startsWith("find ")) {
+      if (command.includes("-maxdepth 1")) {
+        return ok(
+          [
+            "/root/.pedalboards/Dave.pedalboard",
+            "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard"
+          ].join("\n") + "\n"
+        );
+      }
+      return ok(
+        [
+          "/root/.pedalboards/Dave.pedalboard",
+          "/root/.pedalboards/Dave.pedalboard/manifest.ttl",
+          "/root/.pedalboards/Dave.pedalboard/Dave.ttl",
+          "/root/.pedalboards/Dave.pedalboard/snapshots.json",
+          "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard",
+          "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/manifest.ttl",
+          "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/AI_TEST_DO_NOT_U.ttl",
+          "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/snapshots.json",
+          "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/addressings.json"
+        ].join("\n") + "\n"
+      );
+    }
     if (command.includes("/usr/share/mod/pedalboards") && command.startsWith("find "))
       return ok("/usr/share/mod/default.pedalboard\n");
     if (command.includes("/root/.lv2") && command.startsWith("find "))
       return ok("/root/.lv2\n/root/.lv2/Gain.lv2\n");
     if (command.includes("/usr/lib/lv2") && command.startsWith("find "))
       return ok("/usr/lib/lv2\n/usr/lib/lv2/mod.lv2\n");
-    if (command.includes("Dave.pedalboard") && command.includes("*.ttl"))
-      return ok("/root/.pedalboards/Dave.pedalboard/Dave.ttl\n");
-
     return { stdout: "", stderr: `Unhandled mock command: ${command}`, code: 1 };
   }
 }
@@ -58,6 +78,13 @@ function mapDevicePath(path: string): string | null {
       fixtureRoot,
       "pedalboards/Dave.pedalboard",
       path.replace("/root/.pedalboards/Dave.pedalboard/", "")
+    );
+  }
+  if (path.startsWith("/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard")) {
+    return join(
+      fixtureRoot,
+      "pedalboards/AI_TEST_DO_NOT_U.pedalboard",
+      path.replace("/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/", "")
     );
   }
   return null;

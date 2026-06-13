@@ -19,7 +19,16 @@ describe("services with mocked SSH", () => {
     const info = await service.getDeviceInfo();
     expect(info.firmwareVersion).toBe("v1.13.5.3315");
     expect(info.counts.lv2Plugins).toBe(2);
-    expect(info.counts.userPedalboards).toBe(1);
+    expect(info.counts.userPedalboards).toBe(2);
+  });
+
+  it("uses pedalboard metadata title when bundle filenames are truncated", async () => {
+    const service = new PedalboardService(new MockRunner());
+    const pedalboards = await service.listPedalboards("user");
+    const saved = pedalboards.user.find((pedalboard) =>
+      pedalboard.bundlePath.endsWith("AI_TEST_DO_NOT_U.pedalboard")
+    );
+    expect(saved?.title).toBe("AI_TEST_DO_NOT_USE");
   });
 
   it("lists banks", async () => {
