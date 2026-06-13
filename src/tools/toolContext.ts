@@ -2,6 +2,7 @@ import type { BankService } from "../services/bankService.js";
 import type { DeviceService } from "../services/deviceService.js";
 import type { DryBundleService } from "../services/dryBundleService.js";
 import type { ImportBundleService } from "../services/importBundleService.js";
+import type { LoadExistingPedalboardService } from "../services/loadExistingPedalboardService.js";
 import type { PedalboardService } from "../services/pedalboardService.js";
 import type { PluginService } from "../services/pluginService.js";
 import type { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
@@ -18,6 +19,7 @@ export interface ToolContext {
   dryBundleService: DryBundleService;
   importBundleService: ImportBundleService;
   saveLoadedPedalboardService: SaveLoadedPedalboardService;
+  loadExistingPedalboardService: LoadExistingPedalboardService;
 }
 
 export function jsonContent(value: unknown) {

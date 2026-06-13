@@ -8,6 +8,7 @@ import { listBanksTool } from "../tools/listBanks.js";
 import { listPedalboardsTool } from "../tools/listPedalboards.js";
 import { listPluginsTool } from "../tools/listPlugins.js";
 import { listSnapshotsTool } from "../tools/listSnapshots.js";
+import { loadExistingPedalboardTool } from "../tools/loadExistingPedalboard.js";
 import { planPedalboardFromPromptTool } from "../tools/planPedalboardFromPrompt.js";
 import { saveLoadedPedalboardAsNewTool } from "../tools/saveLoadedPedalboardAsNew.js";
 import type { ToolContext } from "../tools/toolContext.js";
@@ -128,6 +129,20 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => saveLoadedPedalboardAsNewTool(input, context)
+  );
+
+  server.registerTool(
+    "load_existing_pedalboard",
+    {
+      title: "Load an existing saved pedalboard",
+      description:
+        "Write-gated MOD UI API load step. Requires MOD_DWARF_ENABLE_WRITE_TOOLS=true and confirm=true. Calls POST /pedalboard/load_bundle/ with bundlepath and never calls /pedalboard/save or /banks/save.",
+      inputSchema: {
+        bundlePath: z.string().min(1),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => loadExistingPedalboardTool(input, context)
   );
 
   server.registerTool(

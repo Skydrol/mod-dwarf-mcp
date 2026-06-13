@@ -7,6 +7,7 @@ import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
+import { LoadExistingPedalboardService } from "../services/loadExistingPedalboardService.js";
 import { PedalboardService } from "../services/pedalboardService.js";
 import { PluginService } from "../services/pluginService.js";
 import { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
@@ -43,6 +44,11 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       deps.writeToolsEnabled === true
     ),
     saveLoadedPedalboardService: new SaveLoadedPedalboardService(
+      pedalboardService,
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true
+    ),
+    loadExistingPedalboardService: new LoadExistingPedalboardService(
       pedalboardService,
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true

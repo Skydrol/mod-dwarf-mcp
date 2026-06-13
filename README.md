@@ -16,6 +16,7 @@ The server inspects a MOD Dwarf over SSH and, where useful in future phases, GET
 - `create_pedalboard_dry_bundle`: generate a local temporary LV2 pedalboard bundle from a plan; uploads nothing
 - `import_pedalboard_dry_bundle`: write-gated MOD UI API import/load for a generated dry bundle; disabled by default
 - `save_loaded_pedalboard_as_new`: write-gated persistent save of the currently loaded pedalboard using `/pedalboard/save` with `asNew=1`
+- `load_existing_pedalboard`: write-gated load of an existing saved bundle using `/pedalboard/load_bundle/`; does not save or call `/banks/save`
 
 ## Requirements
 
@@ -58,7 +59,7 @@ npm start
 
 ## Safety Model
 
-Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds write-gated import/load and save tools that are disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. They use MOD UI API endpoints only, return every API call attempted, and never fall back to direct file writes. `save_loaded_pedalboard_as_new` refuses to run if the target title already exists and never calls `/banks/save`.
+Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds write-gated import/load and save tools that are disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. They use MOD UI API endpoints only, return every API call attempted, and never fall back to direct file writes. `save_loaded_pedalboard_as_new` refuses to run if the target title already exists and never calls `/banks/save`. `load_existing_pedalboard` requires an existing bundle path, calls only `/pedalboard/load_bundle/`, and never calls `/pedalboard/save` or `/banks/save`.
 
 The SSH client allows only read-oriented commands such as `cat`, `find`, `ls`, `sed -n`, `uname`, `lv2ls`, `test`, `readlink`, `printf`, `grep`, and `wc`.
 
@@ -207,6 +208,17 @@ Write-gated persistent save for the currently loaded pedalboard. Requires `MOD_D
 ```json
 {
   "title": "AI_TEST_DO_NOT_USE",
+  "confirm": true
+}
+```
+
+### load_existing_pedalboard
+
+Write-gated load for an existing saved pedalboard bundle. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and `confirm: true`. It verifies the bundle path is listed first, then calls `POST /pedalboard/load_bundle/` with `bundlepath`. It never calls `/pedalboard/save` or `/banks/save`.
+
+```json
+{
+  "bundlePath": "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard",
   "confirm": true
 }
 ```
