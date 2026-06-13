@@ -268,11 +268,11 @@ export class LiveGraphConnectionExperimentService {
   }
 
   private connectPath(source: string, target: string): string {
-    return `/effect/connect/${graphRef(source)},${graphRef(target)}`;
+    return `/effect/connect/${uiGraphRef(source)},${uiGraphRef(target)}`;
   }
 
   private disconnectPath(source: string, target: string): string {
-    return `/effect/disconnect/${graphRef(source)},${graphRef(target)}`;
+    return `/effect/disconnect/${uiGraphRef(source)},${uiGraphRef(target)}`;
   }
 
   private removePath(instance: string): string {
@@ -510,8 +510,8 @@ function canonicalRef(value: string): string {
     .replace(/^\//, "");
 }
 
-function graphRef(value: string): string {
-  return `graph/${canonicalRef(value)}`;
+function uiGraphRef(value: string): string {
+  return `/graph/${canonicalRef(value)}`;
 }
 
 function edgeKey(source: string, target: string): string {
