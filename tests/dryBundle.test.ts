@@ -68,10 +68,9 @@ describe("DryBundleService", () => {
       signalChain: [{ ...plan.signalChain[0], uri: undefined }, ...plan.signalChain.slice(1)]
     };
 
-    const bundle = await service.createDryBundle(planWithMissingUri);
-
-    expect(bundle.validation.pluginUris.valid).toBe(false);
-    expect(bundle.validation.pluginUris.missing[0]).toContain("missing plugin URI");
+    await expect(service.createDryBundle(planWithMissingUri)).rejects.toThrow(
+      "Safety check failed"
+    );
   });
 
   it("exposes the local dry-bundle generator through the MCP tool adapter", async () => {

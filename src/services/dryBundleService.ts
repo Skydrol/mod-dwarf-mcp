@@ -61,6 +61,9 @@ export class DryBundleService {
   async createDryBundle(plan: PedalboardPlan): Promise<DryPedalboardBundle> {
     const availableUris = await this.installedPluginUris();
     const resolvedPlugins = await this.resolvePlugins(plan.signalChain);
+
+    this.checkSafety(plan, resolvedPlugins);
+
     const title = this.titleFromPlan(plan);
     const mainFileName = `${slug(title)}.ttl`;
     const root = await mkdtemp(join(tmpdir(), "mod-dwarf-mcp-"));
@@ -282,6 +285,36 @@ export class DryBundleService {
     return Object.fromEntries(entries.map((entry, index) => [`/hmi/knob${index + 1}`, [entry]]));
   }
 
+  private checkSafety(plan: PedalboardPlan, resolvedPlugins: ResolvedPlugin[]): void {
+    const errors: string[] = [];
+
+    for (const resolved of resolvedPlugins) {
+      if (resolved.ports.ports.length === 0) {
+        errors.push(`Metadata missing for plugin: ${resolved.plan.uri || resolved.plan.name}`);
+      }
+
+      if (resolved.ports.audioInputs.length === 0) {
+        errors.push(`Plugin has no audio inputs: ${resolved.plan.uri || resolved.plan.name}`);
+      }
+      if (resolved.ports.audioOutputs.length === 0) {
+        errors.push(`Plugin has no audio outputs: ${resolved.plan.uri || resolved.plan.name}`);
+      }
+
+      for (const requestedKey of Object.keys(resolved.plan.parameterRanges)) {
+        const port = resolved.controlRanges.find((cr) => cr.requestedKey === requestedKey);
+        if (!port) {
+          errors.push(
+            `Parameter '${requestedKey}' not found on plugin: ${resolved.plan.uri || resolved.plan.name}`
+          );
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new Error(`Safety check failed: \n- ${errors.join("\n- ")}`);
+    }
+  }
+
   private validate(input: {
     plan: PedalboardPlan;
     resolvedPlugins: ResolvedPlugin[];
@@ -387,25 +420,50 @@ function resolveControlRanges(
   ports: PluginPortInfo
 ): ResolvedPlugin["controlRanges"] {
   const used = new Set<string>();
-  return Object.entries(plugin.parameterRanges).flatMap(([requestedKey, range]) => {
+  return Object.entries(plugin.parameterRanges).flatMap(([requestedKey, planRange]) => {
     const port = findControlPort(requestedKey, ports.controlInputs, used);
     if (!port) return [];
     used.add(port.symbol);
+
+    const range = {
+      min: port.minimum ?? planRange.min,
+      max: port.maximum ?? planRange.max,
+      unit: port.unit ?? planRange.unit
+    };
+
     return [{ requestedKey, symbol: port.symbol, range }];
   });
 }
 
 function findControlPort(key: string, ports: PluginPort[], used: Set<string>): PluginPort | null {
-  const candidates = [normalizePortKey(key), ...(CONTROL_ALIASES[normalizePortKey(key)] ?? [])];
-  return (
-    ports.find(
-      (port) => !used.has(port.symbol) && candidates.includes(normalizePortKey(port.symbol))
-    ) ??
-    ports.find(
-      (port) => !used.has(port.symbol) && candidates.includes(normalizePortKey(port.name ?? ""))
-    ) ??
-    null
+  const normalizedKey = normalizePortKey(key);
+
+  // 1. Try exact symbol match (case-insensitive)
+  const exactSymbol = ports.find(
+    (port) => !used.has(port.symbol) && normalizePortKey(port.symbol) === normalizedKey
   );
+  if (exactSymbol) return exactSymbol;
+
+  // 2. Try exact name match (case-insensitive)
+  const exactName = ports.find(
+    (port) => !used.has(port.symbol) && normalizePortKey(port.name ?? "") === normalizedKey
+  );
+  if (exactName) return exactName;
+
+  // 3. Try aliases
+  const aliases = CONTROL_ALIASES[normalizedKey] ?? [];
+  for (const alias of aliases) {
+    const normalizedAlias = normalizePortKey(alias);
+    const matched = ports.find(
+      (port) =>
+        !used.has(port.symbol) &&
+        (normalizePortKey(port.symbol) === normalizedAlias ||
+          normalizePortKey(port.name ?? "") === normalizedAlias)
+    );
+    if (matched) return matched;
+  }
+
+  return null;
 }
 
 const CONTROL_ALIASES: Record<string, string[]> = {

@@ -129,7 +129,6 @@ export class PedalboardPlannerService {
         fallback: ["Gain", "Gain 2x2"],
         reason: "Keeps the core tone clean while providing cabinet or preamp color.",
         parameterRanges: {
-          level: { min: -12, max: 0, unit: "dB" },
           Gain: { min: -6, max: 3, unit: "dB" }
         }
       });
@@ -202,9 +201,7 @@ export class PedalboardPlannerService {
         reason: "Adds the requested space and tail character.",
         parameterRanges: {
           decay: { min: 1.2, max: 6.5, unit: "s" },
-          mix: { min: 8, max: 45, unit: "%" },
-          low_cut: { min: 120, max: 350, unit: "Hz" },
-          high_cut: { min: 2500, max: 9000, unit: "Hz" }
+          mix: { min: 8, max: 45, unit: "%" }
         }
       });
     }

@@ -119,7 +119,24 @@ export function parseLv2InfoPorts(text: string, uri: string): PluginPortInfo {
       : types.some((type) => type.endsWith("#OutputPort"))
         ? "output"
         : "unknown";
-    ports.push({ index, symbol, name, types, kind, direction });
+
+    const minimumMatch = block.match(/Minimum:\s+([^\n]+)/);
+    const maximumMatch = block.match(/Maximum:\s+([^\n]+)/);
+    const defaultMatch = block.match(/Default:\s+([^\n]+)/);
+    const unitMatch = block.match(/Unit:\s+([^\n]+)/);
+
+    ports.push({
+      index,
+      symbol,
+      name,
+      types,
+      kind,
+      direction,
+      minimum: minimumMatch ? Number(minimumMatch[1]) : undefined,
+      maximum: maximumMatch ? Number(maximumMatch[1]) : undefined,
+      default: defaultMatch ? Number(defaultMatch[1]) : undefined,
+      unit: unitMatch ? unitMatch[1].trim() : undefined
+    });
   }
 
   return {

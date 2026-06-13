@@ -35,3 +35,19 @@ http://distrho.sf.net/plugins/MVerb
 		             http://lv2plug.in/ns/lv2core#InputPort
 		Symbol:      decay
 		Name:        Decay
+
+	Port 6:
+		Type:        http://lv2plug.in/ns/lv2core#ControlPort
+		             http://lv2plug.in/ns/lv2core#InputPort
+		Symbol:      low_cut
+		Name:        Low Cut
+		Minimum:     20.000000
+		Maximum:     20000.000000
+
+	Port 7:
+		Type:        http://lv2plug.in/ns/lv2core#ControlPort
+		             http://lv2plug.in/ns/lv2core#InputPort
+		Symbol:      high_cut
+		Name:        High Cut
+		Minimum:     20.000000
+		Maximum:     20000.000000

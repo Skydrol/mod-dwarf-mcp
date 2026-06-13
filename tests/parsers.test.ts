@@ -49,7 +49,22 @@ describe("parsers", () => {
     );
     expect(info.audioInputs.map((port) => port.symbol)).toEqual(["in1", "in2"]);
     expect(info.audioOutputs.map((port) => port.symbol)).toEqual(["out1", "out2"]);
-    expect(info.controlInputs.map((port) => port.symbol)).toEqual(["mix", "decay"]);
+    expect(info.controlInputs.map((port) => port.symbol)).toEqual([
+      "mix",
+      "decay",
+      "low_cut",
+      "high_cut"
+    ]);
+  });
+
+  it("parses lv2info metadata with ranges", () => {
+    const info = parseLv2InfoPorts(
+      readFileSync(join(fixtureRoot, "lv2/lv2info/gain.txt"), "utf8"),
+      "http://moddevices.com/plugins/mod-devel/Gain"
+    );
+    const gainPort = info.controlInputs.find((p) => p.symbol === "Gain");
+    expect(gainPort?.minimum).toBe(-40);
+    expect(gainPort?.maximum).toBe(40);
   });
 
   it("parses banks", () => {

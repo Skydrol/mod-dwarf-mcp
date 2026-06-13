@@ -18,6 +18,10 @@ export interface PluginPort {
   types: string[];
   kind: PluginPortKind;
   direction: PluginPortDirection;
+  default?: number;
+  minimum?: number;
+  maximum?: number;
+  unit?: string;
 }
 
 export interface PluginPortInfo {
