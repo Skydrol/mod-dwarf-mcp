@@ -14,7 +14,8 @@ The server inspects a MOD Dwarf over SSH and, where useful in future phases, GET
 - `list_snapshots`: snapshots for one pedalboard
 - `plan_pedalboard_from_prompt`: dry-run pedalboard plan using installed plugins only
 - `create_pedalboard_dry_bundle`: generate a local temporary LV2 pedalboard bundle from a plan; uploads nothing
-- `import_pedalboard_dry_bundle`: write-gated MOD UI API import for a generated dry bundle; disabled by default
+- `import_pedalboard_dry_bundle`: write-gated MOD UI API import/load for a generated dry bundle; disabled by default
+- `save_loaded_pedalboard_as_new`: write-gated persistent save of the currently loaded pedalboard using `/pedalboard/save` with `asNew=1`
 
 ## Requirements
 
@@ -57,7 +58,7 @@ npm start
 
 ## Safety Model
 
-Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds a write-gated import tool that is disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. It uses MOD UI API endpoints only, returns every API call attempted, and never falls back to direct file writes.
+Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds write-gated import/load and save tools that are disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. They use MOD UI API endpoints only, return every API call attempted, and never fall back to direct file writes. `save_loaded_pedalboard_as_new` refuses to run if the target title already exists and never calls `/banks/save`.
 
 The SSH client allows only read-oriented commands such as `cat`, `find`, `ls`, `sed -n`, `uname`, `lv2ls`, `test`, `readlink`, `printf`, `grep`, and `wc`.
 
@@ -196,6 +197,17 @@ Write-gated import. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` in the server e
   },
   "confirm": true,
   "targetName": "Example"
+}
+```
+
+### save_loaded_pedalboard_as_new
+
+Write-gated persistent save for the currently loaded pedalboard. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and `confirm: true`. It checks `list_pedalboards` before saving, refuses existing titles, calls `POST /pedalboard/save` with `title` and `asNew=1`, confirms the new title appears afterward, logs every API call, and never calls `/banks/save`.
+
+```json
+{
+  "title": "AI_TEST_DO_NOT_USE",
+  "confirm": true
 }
 ```
 

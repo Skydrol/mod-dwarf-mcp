@@ -173,3 +173,12 @@ export const importPedalboardDryBundleInputSchema = z
   .strict();
 
 export type ImportPedalboardDryBundleInput = z.infer<typeof importPedalboardDryBundleInputSchema>;
+
+export const saveLoadedPedalboardAsNewInputSchema = z
+  .object({
+    title: z.string().min(1),
+    confirm: z.boolean()
+  })
+  .strict();
+
+export type SaveLoadedPedalboardAsNewInput = z.infer<typeof saveLoadedPedalboardAsNewInputSchema>;

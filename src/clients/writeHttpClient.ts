@@ -36,6 +36,25 @@ export class WriteHttpClient {
     return this.request(path, { method: "POST", body: form }, purpose);
   }
 
+  async postForm(
+    path: string,
+    fields: Record<string, string | number | boolean>,
+    purpose: string
+  ): Promise<WriteHttpResponse> {
+    this.assertPath(path);
+    const body = new URLSearchParams();
+    for (const [key, value] of Object.entries(fields)) body.set(key, String(value));
+    return this.request(
+      path,
+      {
+        method: "POST",
+        body,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      purpose
+    );
+  }
+
   async postRawFile(path: string, filePath: string, purpose: string): Promise<WriteHttpResponse> {
     this.assertPath(path);
     const bytes = await readFile(filePath);

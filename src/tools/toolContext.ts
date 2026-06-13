@@ -4,6 +4,7 @@ import type { DryBundleService } from "../services/dryBundleService.js";
 import type { ImportBundleService } from "../services/importBundleService.js";
 import type { PedalboardService } from "../services/pedalboardService.js";
 import type { PluginService } from "../services/pluginService.js";
+import type { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
 import type { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
 import type { SnapshotService } from "../services/snapshotService.js";
 
@@ -16,6 +17,7 @@ export interface ToolContext {
   pedalboardPlannerService: PedalboardPlannerService;
   dryBundleService: DryBundleService;
   importBundleService: ImportBundleService;
+  saveLoadedPedalboardService: SaveLoadedPedalboardService;
 }
 
 export function jsonContent(value: unknown) {

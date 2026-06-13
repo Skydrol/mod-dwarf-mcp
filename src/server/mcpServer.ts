@@ -10,6 +10,7 @@ import { ImportBundleService } from "../services/importBundleService.js";
 import { PedalboardService } from "../services/pedalboardService.js";
 import { PluginService } from "../services/pluginService.js";
 import { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
+import { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
 import { SnapshotService } from "../services/snapshotService.js";
 import { registerTools } from "./toolRegistry.js";
 
@@ -37,6 +38,11 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     pedalboardPlannerService: new PedalboardPlannerService(pluginService, pedalboardService),
     dryBundleService: new DryBundleService(pluginService),
     importBundleService: new ImportBundleService(
+      pedalboardService,
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true
+    ),
+    saveLoadedPedalboardService: new SaveLoadedPedalboardService(
       pedalboardService,
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true

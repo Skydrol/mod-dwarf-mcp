@@ -9,6 +9,7 @@ import { listPedalboardsTool } from "../tools/listPedalboards.js";
 import { listPluginsTool } from "../tools/listPlugins.js";
 import { listSnapshotsTool } from "../tools/listSnapshots.js";
 import { planPedalboardFromPromptTool } from "../tools/planPedalboardFromPrompt.js";
+import { saveLoadedPedalboardAsNewTool } from "../tools/saveLoadedPedalboardAsNew.js";
 import type { ToolContext } from "../tools/toolContext.js";
 import { dryPedalboardBundleSchema, pedalboardPlanSchema } from "../schemas/tools.js";
 
@@ -113,6 +114,20 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => importPedalboardDryBundleTool(input, context)
+  );
+
+  server.registerTool(
+    "save_loaded_pedalboard_as_new",
+    {
+      title: "Save the loaded pedalboard as a new user pedalboard",
+      description:
+        "Write-gated MOD UI API save step. Requires MOD_DWARF_ENABLE_WRITE_TOOLS=true and confirm=true. Calls POST /pedalboard/save with asNew=1 and never calls /banks/save.",
+      inputSchema: {
+        title: z.string().min(1),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => saveLoadedPedalboardAsNewTool(input, context)
   );
 
   server.registerTool(
