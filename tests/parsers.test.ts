@@ -6,7 +6,8 @@ import {
   extractMainTtlFromManifest,
   extractPluginsUsed,
   normalizeSnapshots,
-  parseBanks
+  parseBanks,
+  parseLv2InfoPorts
 } from "../src/services/parsers.js";
 
 const fixtureRoot = join(process.cwd(), "tests", "fixtures");
@@ -39,6 +40,16 @@ describe("parsers", () => {
     expect(normalized.current).toBe(0);
     expect(normalized.snapshots[0].name).toBe("Default");
     expect(normalized.snapshots[0].portsByPlugin.Gain.Gain).toBe(0);
+  });
+
+  it("parses lv2info audio and control port symbols", () => {
+    const info = parseLv2InfoPorts(
+      readFileSync(join(fixtureRoot, "lv2/lv2info/mverb.txt"), "utf8"),
+      "http://distrho.sf.net/plugins/MVerb"
+    );
+    expect(info.audioInputs.map((port) => port.symbol)).toEqual(["in1", "in2"]);
+    expect(info.audioOutputs.map((port) => port.symbol)).toEqual(["out1", "out2"]);
+    expect(info.controlInputs.map((port) => port.symbol)).toEqual(["mix", "decay"]);
   });
 
   it("parses banks", () => {

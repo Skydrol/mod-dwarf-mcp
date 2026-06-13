@@ -3,7 +3,7 @@ import { gzipSync } from "node:zlib";
 import { basename, dirname, join, relative } from "node:path";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
 import type { DryPedalboardBundle } from "../types/dryBundle.js";
-import type { ImportDryBundleResult } from "../types/importBundle.js";
+import type { ImportDryBundleResult, LoadedGraphValidation } from "../types/importBundle.js";
 import type { PedalboardSummary } from "../types/pedalboard.js";
 import type { PedalboardService } from "./pedalboardService.js";
 
@@ -75,6 +75,9 @@ export class ImportBundleService {
     }
 
     const importResult = await this.importArchive(archivePath);
+    const loadedGraphValidation = importResult.success
+      ? await this.validateLoadedGraph(input.dryBundle)
+      : undefined;
     return {
       writeToolsEnabled: true,
       confirmed: true,
@@ -86,6 +89,7 @@ export class ImportBundleService {
         : { required: false, created: false },
       import: importResult,
       localArchivePath: archivePath,
+      loadedGraphValidation,
       apiCalls: [...this.writeApi.calls],
       directFileWrites: false,
       notes: [
@@ -237,6 +241,64 @@ export class ImportBundleService {
     }
   }
 
+  private async validateLoadedGraph(bundle: DryPedalboardBundle): Promise<LoadedGraphValidation> {
+    const bundlePath = `/tmp/pedalboards/${basename(bundle.bundlePath)}`;
+    const expectedPluginUris = bundle.sourcePlan.signalChain
+      .map((plugin) => plugin.uri)
+      .filter((uri): uri is string => Boolean(uri));
+
+    try {
+      const response = await this.writeApiOrThrow().getJson<{ plugins?: Array<{ uri?: string }> }>(
+        `/pedalboard/info/?bundlepath=${encodeURIComponent(bundlePath)}`,
+        "validate loaded graph after load_web import"
+      );
+      if (!response.ok || !response.value) {
+        return {
+          attempted: true,
+          success: false,
+          bundlePath,
+          pluginCount: 0,
+          expectedPluginUris,
+          actualPluginUris: [],
+          missingPluginUris: expectedPluginUris,
+          error: `HTTP ${response.status} from /pedalboard/info/`
+        };
+      }
+
+      const actualPluginUris = Array.isArray(response.value.plugins)
+        ? response.value.plugins
+            .map((plugin) => plugin.uri)
+            .filter((uri): uri is string => Boolean(uri))
+        : [];
+      const missingPluginUris = expectedPluginUris.filter((uri) => !actualPluginUris.includes(uri));
+      return {
+        attempted: true,
+        success: actualPluginUris.length > 0 && missingPluginUris.length === 0,
+        bundlePath,
+        pluginCount: actualPluginUris.length,
+        expectedPluginUris,
+        actualPluginUris,
+        missingPluginUris,
+        error:
+          actualPluginUris.length === 0
+            ? "MOD UI resolved the imported bundle as zero plugins"
+            : missingPluginUris.length > 0
+              ? "Loaded graph is missing expected plugin URIs"
+              : undefined
+      };
+    } catch (error) {
+      return {
+        attempted: true,
+        success: false,
+        bundlePath,
+        pluginCount: 0,
+        expectedPluginUris,
+        actualPluginUris: [],
+        missingPluginUris: expectedPluginUris,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
   private async createTarGzArchive(bundle: DryPedalboardBundle): Promise<string> {
     const archivePath = join(bundle.directoryPath, `${basename(bundle.bundlePath)}.tar.gz`);
     const files = await Promise.all(

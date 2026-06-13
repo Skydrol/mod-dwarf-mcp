@@ -12,6 +12,7 @@ export class MockRunner implements CommandRunner {
 
     if (command === "lv2ls") return ok(readFixture("lv2/lv2ls-uris.txt"));
     if (command === "lv2ls -n") return ok(readFixture("lv2/lv2ls-names.txt"));
+    if (command.startsWith("lv2info ")) return lv2InfoCommand(command);
     if (command === "uname -a")
       return ok(
         "Linux moddwarf 6.1.15-rt7-moddwarf #6 SMP PREEMPT_RT Mon Oct 7 16:24:37 UTC 2024 aarch64 GNU/Linux\n"
@@ -88,6 +89,17 @@ function mapDevicePath(path: string): string | null {
     );
   }
   return null;
+}
+
+function lv2InfoCommand(command: string): CommandResult {
+  const uri = unquotePath(command);
+  if (uri === "http://moddevices.com/plugins/mod-devel/Gain") {
+    return ok(readFixture("lv2/lv2info/gain.txt"));
+  }
+  if (uri === "http://distrho.sf.net/plugins/MVerb") {
+    return ok(readFixture("lv2/lv2info/mverb.txt"));
+  }
+  return { stdout: "", stderr: "missing lv2info fixture", code: 1 };
 }
 
 function catCommand(command: string): CommandResult {

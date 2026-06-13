@@ -36,6 +36,20 @@ class MockWriteApi {
     };
   }
 
+  async getJson<T>(
+    path: string,
+    purpose: string
+  ): Promise<{ ok: boolean; status: number; value: T; text: string }> {
+    this.calls.push({ method: "GET", path, purpose, status: "success", httpStatus: 200 });
+    const value = {
+      plugins: [
+        { uri: "http://moddevices.com/plugins/mod-devel/Gain" },
+        { uri: "http://distrho.sf.net/plugins/MVerb" }
+      ]
+    } as T;
+    return { ok: true, status: 200, value, text: JSON.stringify(value) };
+  }
+
   async postRawFile(path: string, filePath: string, purpose: string): Promise<WriteHttpResponse> {
     await readFile(filePath);
     expect(path).toBe("/pedalboard/load_web/");
@@ -106,9 +120,11 @@ describe("ImportBundleService", () => {
     expect(result.backup.required).toBe(true);
     expect(result.backup.created).toBe(true);
     expect(result.import.success).toBe(true);
-    expect(result.apiCalls.map((call) => call.method)).toEqual(["GET", "POST"]);
+    expect(result.apiCalls.map((call) => call.method)).toEqual(["GET", "POST", "GET"]);
     expect(result.apiCalls[0].path).toContain("/pedalboard/pack_bundle/?bundlepath=");
     expect(result.apiCalls[1].path).toBe("/pedalboard/load_web/");
+    expect(result.apiCalls[2].path).toContain("/pedalboard/info/?bundlepath=");
+    expect(result.loadedGraphValidation?.success).toBe(true);
     expect(result.directFileWrites).toBe(false);
   });
 
@@ -139,5 +155,6 @@ describe("ImportBundleService", () => {
     expect(result.directFileWrites).toBe(false);
     expect(result.apiCalls.every((call) => call.method === "POST")).toBe(true);
     expect(result.apiCalls.every((call) => call.path === "/pedalboard/load_web/")).toBe(true);
+    expect(result.loadedGraphValidation).toBeUndefined();
   });
 });

@@ -7,6 +7,17 @@ export interface ApiCallRecord {
   error?: string;
 }
 
+export interface LoadedGraphValidation {
+  attempted: boolean;
+  success: boolean;
+  bundlePath: string | null;
+  pluginCount: number;
+  expectedPluginUris: string[];
+  actualPluginUris: string[];
+  missingPluginUris: string[];
+  error?: string;
+}
+
 export interface ImportDryBundleResult {
   writeToolsEnabled: boolean;
   confirmed: boolean;
@@ -45,6 +56,7 @@ export interface ImportDryBundleResult {
         error: string;
       };
   localArchivePath: string | null;
+  loadedGraphValidation?: LoadedGraphValidation;
   apiCalls: ApiCallRecord[];
   directFileWrites: false;
   notes: string[];

@@ -10,8 +10,19 @@ class MockWriteApi {
 
   constructor(
     private readonly ok = true,
-    private readonly onPost?: () => void
+    private readonly onPost?: () => void,
+    private readonly loadedPluginUris: string[] = ["http://moddevices.com/plugins/mod-devel/Gain"]
   ) {}
+
+  async getJson<T>(
+    path: string,
+    purpose: string
+  ): Promise<{ ok: boolean; status: number; value: T; text: string }> {
+    expect(path).toContain("/pedalboard/info/?bundlepath=");
+    this.calls.push({ method: "GET", path, purpose, status: "success", httpStatus: 200 });
+    const value = { plugins: this.loadedPluginUris.map((uri) => ({ uri })) } as T;
+    return { ok: true, status: 200, value, text: JSON.stringify(value) };
+  }
 
   async postForm(
     path: string,
@@ -96,6 +107,27 @@ describe("SaveLoadedPedalboardService", () => {
     expect(result.targetExistsBefore).toBe(true);
     expect(result.saved.attempted).toBe(false);
     expect(result.apiCalls).toEqual([]);
+  });
+
+  it("refuses to save when loaded graph plugin URIs do not match the dry bundle", async () => {
+    const api = new MockWriteApi(true, undefined, ["http://unexpected/plugin"]);
+    const service = new SaveLoadedPedalboardService(
+      new PedalboardService(new MockRunner()),
+      api as never,
+      true
+    );
+
+    const result = await service.saveAsNew({
+      title: "New Safe Board",
+      confirm: true,
+      loadedBundlePath: "/tmp/pedalboards/New_Safe_Board.pedalboard",
+      expectedPluginUris: ["http://moddevices.com/plugins/mod-devel/Gain"]
+    });
+
+    expect(result.saved.attempted).toBe(false);
+    expect(result.loadedGraphValidation?.success).toBe(false);
+    expect(result.apiCalls.map((call) => call.method)).toEqual(["GET"]);
+    expect(result.banksSaveCalled).toBe(false);
   });
 
   it("saves the currently loaded pedalboard as a new user pedalboard", async () => {

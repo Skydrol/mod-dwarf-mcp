@@ -1,6 +1,7 @@
 import type { CommandRunner } from "../clients/sshClient.js";
-import type { PluginList } from "../types/plugin.js";
-import { lines } from "./parsers.js";
+import type { PluginList, PluginPortInfo } from "../types/plugin.js";
+import { lines, parseLv2InfoPorts } from "./parsers.js";
+import { shellQuote } from "./sshUtils.js";
 
 export class PluginService {
   constructor(private readonly ssh: CommandRunner) {}
@@ -29,5 +30,13 @@ export class PluginService {
         uri: uris[index]
       }))
     };
+  }
+
+  async getPluginPorts(uri: string): Promise<PluginPortInfo> {
+    const result = await this.ssh.exec(`lv2info ${shellQuote(uri)}`);
+    if (result.code !== 0) {
+      return { uri, ports: [], audioInputs: [], audioOutputs: [], controlInputs: [] };
+    }
+    return parseLv2InfoPorts(result.stdout, uri);
   }
 }

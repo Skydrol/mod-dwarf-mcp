@@ -125,7 +125,9 @@ export function registerTools(server: McpServer, context: ToolContext): void {
         "Write-gated MOD UI API save step. Requires MOD_DWARF_ENABLE_WRITE_TOOLS=true and confirm=true. Calls POST /pedalboard/save with asNew=1 and never calls /banks/save.",
       inputSchema: {
         title: z.string().min(1),
-        confirm: z.boolean()
+        confirm: z.boolean(),
+        expectedPluginUris: z.array(z.string().min(1)).optional(),
+        loadedBundlePath: z.string().min(1).optional()
       }
     },
     async (input) => saveLoadedPedalboardAsNewTool(input, context)

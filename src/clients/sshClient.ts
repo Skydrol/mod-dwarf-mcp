@@ -26,6 +26,7 @@ const allowedPrefixes = [
   "wc ",
   "uname",
   "lv2ls",
+  "lv2info ",
   "readlink ",
   "test ",
   "printf ",

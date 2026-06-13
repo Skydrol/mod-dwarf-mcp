@@ -1,4 +1,4 @@
-import type { ApiCallRecord } from "./importBundle.js";
+import type { ApiCallRecord, LoadedGraphValidation } from "./importBundle.js";
 import type { PedalboardSummary } from "./pedalboard.js";
 
 export interface SaveLoadedPedalboardResult {
@@ -6,6 +6,7 @@ export interface SaveLoadedPedalboardResult {
   confirmed: boolean;
   title: string;
   targetExistsBefore: boolean;
+  loadedGraphValidation?: LoadedGraphValidation;
   saved:
     | {
         attempted: true;

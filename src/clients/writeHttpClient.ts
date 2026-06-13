@@ -17,6 +17,21 @@ export class WriteHttpClient {
     this.baseUrl = `http://${config.host}:${config.port}`;
   }
 
+  async getJson<T>(
+    path: string,
+    purpose: string
+  ): Promise<{ ok: boolean; status: number; value: T | null; text: string }> {
+    this.assertPath(path);
+    const response = await this.request(path, { method: "GET" }, purpose);
+    let value: T | null = null;
+    try {
+      value = JSON.parse(response.text) as T;
+    } catch {
+      value = null;
+    }
+    return { ok: response.ok, status: response.status, value, text: response.text };
+  }
+
   async getBytes(path: string, purpose: string): Promise<WriteHttpResponse> {
     this.assertPath(path);
     const response = await this.request(path, { method: "GET" }, purpose);

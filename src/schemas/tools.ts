@@ -177,7 +177,9 @@ export type ImportPedalboardDryBundleInput = z.infer<typeof importPedalboardDryB
 export const saveLoadedPedalboardAsNewInputSchema = z
   .object({
     title: z.string().min(1),
-    confirm: z.boolean()
+    confirm: z.boolean(),
+    expectedPluginUris: z.array(z.string().min(1)).optional(),
+    loadedBundlePath: z.string().min(1).optional()
   })
   .strict();
 

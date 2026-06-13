@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { DryBundleValidationReport, DryPedalboardBundle } from "../types/dryBundle.js";
 import type { PedalboardPlan, PlannedPlugin, PlannedSnapshot } from "../types/plan.js";
+import type { PluginPort, PluginPortInfo } from "../types/plugin.js";
 import {
   extractConnections,
   extractDoapName,
@@ -11,6 +12,16 @@ import {
   extractPluginsUsed
 } from "./parsers.js";
 import type { PluginService } from "./pluginService.js";
+
+interface ResolvedPlugin {
+  plan: PlannedPlugin;
+  ports: PluginPortInfo;
+  controlRanges: Array<{
+    requestedKey: string;
+    symbol: string;
+    range: { min: number; max: number; unit?: string };
+  }>;
+}
 
 const snapshotsFileSchema = z
   .object({
@@ -49,6 +60,7 @@ export class DryBundleService {
 
   async createDryBundle(plan: PedalboardPlan): Promise<DryPedalboardBundle> {
     const availableUris = await this.installedPluginUris();
+    const resolvedPlugins = await this.resolvePlugins(plan.signalChain);
     const title = this.titleFromPlan(plan);
     const mainFileName = `${slug(title)}.ttl`;
     const root = await mkdtemp(join(tmpdir(), "mod-dwarf-mcp-"));
@@ -56,9 +68,9 @@ export class DryBundleService {
     await mkdir(bundlePath, { recursive: true });
 
     const manifest = this.renderManifest(mainFileName);
-    const mainTtl = this.renderMainTtl(title, plan.signalChain);
-    const snapshots = this.renderSnapshots(plan.signalChain, plan.snapshots);
-    const addressings = this.renderAddressings(plan.signalChain);
+    const mainTtl = this.renderMainTtl(title, resolvedPlugins);
+    const snapshots = this.renderSnapshots(resolvedPlugins, plan.snapshots);
+    const addressings = this.renderAddressings(resolvedPlugins);
 
     const generatedFiles = {
       manifest: join(bundlePath, "manifest.ttl"),
@@ -80,7 +92,14 @@ export class DryBundleService {
       directoryPath: root,
       bundlePath,
       generatedFiles,
-      validation: this.validate({ plan, availableUris, manifest, mainTtl, snapshots })
+      validation: this.validate({
+        plan,
+        resolvedPlugins,
+        availableUris,
+        manifest,
+        mainTtl,
+        snapshots
+      })
     };
   }
 
@@ -88,6 +107,17 @@ export class DryBundleService {
     const pluginList = await this.pluginService.listPlugins("uris");
     return new Set(
       pluginList.plugins.map((plugin) => plugin.uri).filter((uri): uri is string => Boolean(uri))
+    );
+  }
+
+  private async resolvePlugins(signalChain: PlannedPlugin[]): Promise<ResolvedPlugin[]> {
+    return Promise.all(
+      signalChain.map(async (plan) => {
+        const ports = plan.uri
+          ? await this.pluginService.getPluginPorts(plan.uri)
+          : { uri: "", ports: [], audioInputs: [], audioOutputs: [], controlInputs: [] };
+        return { plan, ports, controlRanges: resolveControlRanges(plan, ports) };
+      })
     );
   }
 
@@ -108,7 +138,7 @@ export class DryBundleService {
     ].join("\n");
   }
 
-  private renderMainTtl(title: string, signalChain: PlannedPlugin[]): string {
+  private renderMainTtl(title: string, signalChain: ResolvedPlugin[]): string {
     const prefixes = [
       "@prefix doap:  <http://usefulinc.com/ns/doap#> .",
       "@prefix ingen: <http://drobilla.net/ns/ingen#> .",
@@ -121,11 +151,10 @@ export class DryBundleService {
     const blocks = signalChain
       .map((plugin, index) => this.renderPluginBlock(plugin, index))
       .join("\n");
-
     return `${prefixes}${connections}${blocks}\n<>\n    doap:name "${escapeTtlString(title)}" .\n`;
   }
 
-  private renderConnections(signalChain: PlannedPlugin[]): string {
+  private renderConnections(signalChain: ResolvedPlugin[]): string {
     if (signalChain.length === 0) {
       return ["_:b1", "    ingen:tail <capture_1> ;", "    ingen:head <playback_1> .", "", ""].join(
         "\n"
@@ -133,52 +162,49 @@ export class DryBundleService {
     }
 
     const connections: string[] = [];
-    connections.push(
-      [
-        "_:b1",
-        "    ingen:tail <capture_1> ;",
-        `    ingen:head <${safeInstance(signalChain[0])}/In> .`
-      ].join("\n")
-    );
-
-    for (let index = 0; index < signalChain.length - 1; index += 1) {
+    let arc = 1;
+    const add = (tail: string, head: string) => {
       connections.push(
-        [
-          `_:b${index + 2}`,
-          `    ingen:tail <${safeInstance(signalChain[index])}/Out> ;`,
-          `    ingen:head <${safeInstance(signalChain[index + 1])}/In> .`
-        ].join("\n")
+        [`_:b${arc}`, `    ingen:tail <${tail}> ;`, `    ingen:head <${head}> .`].join("\n")
       );
-    }
+      arc += 1;
+    };
 
-    connections.push(
-      [
-        `_:b${signalChain.length + 1}`,
-        `    ingen:tail <${safeInstance(signalChain[signalChain.length - 1])}/Out> ;`,
-        "    ingen:head <playback_1> ."
-      ].join("\n")
-    );
+    for (const [tail, head] of pairPorts(["capture_1", "capture_2"], inputRefs(signalChain[0])))
+      add(tail, head);
+    for (let index = 0; index < signalChain.length - 1; index += 1) {
+      for (const [tail, head] of pairPorts(
+        outputRefs(signalChain[index]),
+        inputRefs(signalChain[index + 1])
+      ))
+        add(tail, head);
+    }
+    for (const [tail, head] of pairPorts(outputRefs(signalChain[signalChain.length - 1]), [
+      "playback_1",
+      "playback_2"
+    ]))
+      add(tail, head);
 
     return `${connections.join("\n\n")}\n\n`;
   }
 
-  private renderPluginBlock(plugin: PlannedPlugin, index: number): string {
-    const instance = safeInstance(plugin);
-    const controlPorts = Object.keys(plugin.parameterRanges);
+  private renderPluginBlock(plugin: ResolvedPlugin, index: number): string {
+    const instance = safeInstance(plugin.plan);
+    const audioPorts = [...plugin.ports.audioInputs, ...plugin.ports.audioOutputs];
     const portList = [
-      `<${instance}/In>`,
-      `<${instance}/Out>`,
-      ...controlPorts.map((port) => `<${instance}/${safePort(port)}>`),
+      ...audioPorts.map((port) => `<${instance}/${port.symbol}>`),
+      ...plugin.controlRanges.map((port) => `<${instance}/${port.symbol}>`),
       `<${instance}/:bypass>`
     ];
-    const controls = controlPorts
+    const audioStanzas = audioPorts.map((port) => renderAudioPort(instance, port)).join("\n");
+    const controls = plugin.controlRanges
       .map((port) => {
-        const range = plugin.parameterRanges[port];
-        const value = midpoint(range.min, range.max);
+        const value = midpoint(port.range.min, port.range.max);
         return [
-          `<${instance}/${safePort(port)}>`,
+          `<${instance}/${port.symbol}>`,
           `    ingen:value ${formatNumber(value)} ;`,
-          "    a lv2:ControlPort , lv2:InputPort .",
+          "    a lv2:ControlPort ,",
+          "        lv2:InputPort .",
           ""
         ].join("\n");
       })
@@ -190,15 +216,16 @@ export class DryBundleService {
       `    ingen:canvasY ${index % 2 === 0 ? "180.0" : "300.0"} ;`,
       "    ingen:enabled true ;",
       `    lv2:port ${portList.join(" , ")} ;`,
-      `    lv2:prototype <${plugin.uri ?? ""}> ;`,
+      `    lv2:prototype <${plugin.plan.uri ?? ""}> ;`,
       `    pedal:instanceNumber ${index} ;`,
       "    a ingen:Block .",
       "",
+      audioStanzas,
       controls
     ].join("\n");
   }
 
-  private renderSnapshots(signalChain: PlannedPlugin[], snapshots: PlannedSnapshot[]) {
+  private renderSnapshots(signalChain: ResolvedPlugin[], snapshots: PlannedSnapshot[]) {
     const safeSnapshots =
       snapshots.length > 0
         ? snapshots
@@ -209,7 +236,7 @@ export class DryBundleService {
         name: snapshot.name,
         data: Object.fromEntries(
           signalChain.map((plugin) => [
-            safeInstance(plugin),
+            safeInstance(plugin.plan),
             {
               preset: "",
               bypassed: false,
@@ -222,43 +249,42 @@ export class DryBundleService {
     };
   }
 
-  private snapshotPorts(plugin: PlannedPlugin, snapshotIndex: number): Record<string, number> {
+  private snapshotPorts(plugin: ResolvedPlugin, snapshotIndex: number): Record<string, number> {
     return Object.fromEntries(
-      Object.entries(plugin.parameterRanges).map(([port, range]) => {
-        const base = midpoint(range.min, range.max);
-        const spread = (range.max - range.min) * 0.18;
+      plugin.controlRanges.map((port) => {
+        const base = midpoint(port.range.min, port.range.max);
+        const spread = (port.range.max - port.range.min) * 0.18;
         const adjusted =
           snapshotIndex === 0
             ? base
-            : Math.min(range.max, Math.max(range.min, base + spread * snapshotIndex));
-        return [safePort(port), Number(adjusted.toFixed(4))];
+            : Math.min(port.range.max, Math.max(port.range.min, base + spread * snapshotIndex));
+        return [port.symbol, Number(adjusted.toFixed(4))];
       })
     );
   }
 
-  private renderAddressings(signalChain: PlannedPlugin[]) {
+  private renderAddressings(signalChain: ResolvedPlugin[]) {
     const entries = signalChain
       .flatMap((plugin) => {
-        const firstRange = Object.entries(plugin.parameterRanges)[0];
+        const firstRange = plugin.controlRanges[0];
         if (!firstRange) return [];
-        const [port, range] = firstRange;
         return [
           {
-            instance: `/graph/${safeInstance(plugin)}`,
-            label: plugin.role,
-            port: safePort(port),
-            minimum: range.min,
-            maximum: range.max
+            instance: `/graph/${safeInstance(plugin.plan)}`,
+            label: plugin.plan.role,
+            port: firstRange.symbol,
+            minimum: firstRange.range.min,
+            maximum: firstRange.range.max
           }
         ];
       })
       .slice(0, 4);
-
     return Object.fromEntries(entries.map((entry, index) => [`/hmi/knob${index + 1}`, [entry]]));
   }
 
   private validate(input: {
     plan: PedalboardPlan;
+    resolvedPlugins: ResolvedPlugin[];
     availableUris: Set<string>;
     manifest: string;
     mainTtl: string;
@@ -279,31 +305,22 @@ export class DryBundleService {
 
     if (!mainFromManifest)
       errors.push("manifest.ttl does not reference a main TTL with rdfs:seeAlso");
-    if (pluginsUsed.length !== input.plan.signalChain.length) {
+    if (pluginsUsed.length !== input.plan.signalChain.length)
       errors.push("main TTL plugin block count does not match the planned signal chain");
-    }
-    if (
-      input.plan.signalChain.length > 0 &&
-      connections.length < input.plan.signalChain.length + 1
-    ) {
+    if (input.resolvedPlugins.some((plugin) => plugin.ports.audioInputs.length === 0))
+      errors.push("one or more planned plugins has no LV2 audio input port metadata");
+    if (input.resolvedPlugins.some((plugin) => plugin.ports.audioOutputs.length === 0))
+      errors.push("one or more planned plugins has no LV2 audio output port metadata");
+    if (input.plan.signalChain.length > 0 && connections.length < input.plan.signalChain.length + 1)
       errors.push(
         "main TTL does not contain enough graph connections for the planned signal chain"
       );
-    }
     if (!extractDoapName(input.mainTtl)) errors.push("main TTL is missing doap:name metadata");
-    if (
-      !input.mainTtl.includes("pedal:instanceNumber") ||
-      !input.mainTtl.includes("a ingen:Block")
-    ) {
+    if (!input.mainTtl.includes("pedal:instanceNumber") || !input.mainTtl.includes("a ingen:Block"))
       errors.push("main TTL does not follow the expected MOD pedalboard block structure");
-    }
 
     return {
-      pluginUris: {
-        valid: missing.length === 0,
-        checked,
-        missing
-      },
+      pluginUris: { valid: missing.length === 0, checked, missing },
       snapshots: {
         valid: snapshotResult.success,
         errors: snapshotResult.success
@@ -335,6 +352,83 @@ export class DryBundleService {
   }
 }
 
+function inputRefs(plugin: ResolvedPlugin): string[] {
+  const instance = safeInstance(plugin.plan);
+  return plugin.ports.audioInputs.map((port) => `${instance}/${port.symbol}`);
+}
+
+function outputRefs(plugin: ResolvedPlugin): string[] {
+  const instance = safeInstance(plugin.plan);
+  return plugin.ports.audioOutputs.map((port) => `${instance}/${port.symbol}`);
+}
+
+function pairPorts(sources: string[], destinations: string[]): Array<[string, string]> {
+  if (sources.length === 0 || destinations.length === 0) return [];
+  if (sources.length === 1) return destinations.map((destination) => [sources[0], destination]);
+  if (destinations.length === 1) return [[sources[0], destinations[0]]];
+  return destinations.map((destination, index) => [
+    sources[Math.min(index, sources.length - 1)],
+    destination
+  ]);
+}
+
+function renderAudioPort(instance: string, port: PluginPort): string {
+  const direction = port.direction === "output" ? "lv2:OutputPort" : "lv2:InputPort";
+  return [
+    `<${instance}/${port.symbol}>`,
+    "    a lv2:AudioPort ,",
+    `        ${direction} .`,
+    ""
+  ].join("\n");
+}
+
+function resolveControlRanges(
+  plugin: PlannedPlugin,
+  ports: PluginPortInfo
+): ResolvedPlugin["controlRanges"] {
+  const used = new Set<string>();
+  return Object.entries(plugin.parameterRanges).flatMap(([requestedKey, range]) => {
+    const port = findControlPort(requestedKey, ports.controlInputs, used);
+    if (!port) return [];
+    used.add(port.symbol);
+    return [{ requestedKey, symbol: port.symbol, range }];
+  });
+}
+
+function findControlPort(key: string, ports: PluginPort[], used: Set<string>): PluginPort | null {
+  const candidates = [normalizePortKey(key), ...(CONTROL_ALIASES[normalizePortKey(key)] ?? [])];
+  return (
+    ports.find(
+      (port) => !used.has(port.symbol) && candidates.includes(normalizePortKey(port.symbol))
+    ) ??
+    ports.find(
+      (port) => !used.has(port.symbol) && candidates.includes(normalizePortKey(port.name ?? ""))
+    ) ??
+    null
+  );
+}
+
+const CONTROL_ALIASES: Record<string, string[]> = {
+  gain: ["gain", "volume", "level"],
+  level: ["level", "volume", "gain"],
+  mix: ["mix", "blend", "wetlevel", "wet", "earlylevel"],
+  feedback: ["feedback"],
+  time: ["time", "delay", "delaytime", "divl"],
+  rate: ["rate", "frequency"],
+  depth: ["depth"],
+  threshold: ["threshold", "thr"],
+  ratio: ["ratio", "rat"],
+  attack: ["attack", "att"],
+  release: ["release", "rel"],
+  decay: ["decay"],
+  lowcut: ["lowcut", "lowf"],
+  highcut: ["highcut", "highf"]
+};
+
+function normalizePortKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function midpoint(min: number, max: number): number {
   return min + (max - min) / 2;
 }
@@ -345,10 +439,6 @@ function formatNumber(value: number): string {
 
 function safeInstance(plugin: PlannedPlugin): string {
   return slug(plugin.suggestedInstance || plugin.name || plugin.role);
-}
-
-function safePort(port: string): string {
-  return slug(port);
 }
 
 function slug(value: string): string {

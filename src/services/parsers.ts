@@ -1,6 +1,7 @@
 import type { Bank } from "../types/bank.js";
 import type { PedalboardSummary } from "../types/pedalboard.js";
 import type { SnapshotSummary, SnapshotValue } from "../types/snapshot.js";
+import type { PluginPort, PluginPortInfo } from "../types/plugin.js";
 
 export function lines(text: string): string[] {
   return text
@@ -74,10 +75,14 @@ export function extractMainTtlFromManifest(manifest: string): string | null {
 }
 
 export function extractPluginsUsed(ttl: string): Array<{ instance: string; uri: string }> {
-  const blockRegex = /^<([^>]+)>[\s\S]*?lv2:prototype\s+<([^>]+)>[\s\S]*?a\s+ingen:Block/gm;
+  const stanzaRegex = /^<([^>]+)>\n([\s\S]*?)(?=\n<|\n_:|\n$)/gm;
   const plugins: Array<{ instance: string; uri: string }> = [];
-  for (const match of ttl.matchAll(blockRegex)) {
-    plugins.push({ instance: match[1], uri: match[2] });
+  for (const match of ttl.matchAll(stanzaRegex)) {
+    const subject = match[1];
+    const body = match[2];
+    const prototype = body.match(/lv2:prototype\s+<([^>]+)>/)?.[1];
+    if (prototype && /a\s+ingen:Block\b/.test(body))
+      plugins.push({ instance: subject, uri: prototype });
   }
   return plugins;
 }
@@ -90,6 +95,40 @@ export function extractConnections(ttl: string): Array<{ tail: string; head: str
 export function extractDoapName(ttl: string): string | null {
   const match = ttl.match(/doap:name\s+"([^"]+)"/);
   return match?.[1] ?? null;
+}
+
+export function parseLv2InfoPorts(text: string, uri: string): PluginPortInfo {
+  const ports: PluginPort[] = [];
+  const portRegex = /Port\s+(\d+):([\s\S]*?)(?=\n\s*Port\s+\d+:|\n*$)/g;
+  for (const match of text.matchAll(portRegex)) {
+    const index = Number(match[1]);
+    const block = match[2];
+    const symbol = block.match(/Symbol:\s+([^\n]+)/)?.[1]?.trim();
+    if (!symbol) continue;
+    const name = block.match(/Name:\s+([^\n]+)/)?.[1]?.trim() ?? null;
+    const types = [...block.matchAll(/https?:\/\/[^\s]+#[A-Za-z0-9_]+/g)].map((item) => item[0]);
+    const kind = types.some((type) => type.endsWith("#AudioPort"))
+      ? "audio"
+      : types.some((type) => type.endsWith("#ControlPort"))
+        ? "control"
+        : types.some((type) => type.endsWith("#AtomPort"))
+          ? "atom"
+          : "other";
+    const direction = types.some((type) => type.endsWith("#InputPort"))
+      ? "input"
+      : types.some((type) => type.endsWith("#OutputPort"))
+        ? "output"
+        : "unknown";
+    ports.push({ index, symbol, name, types, kind, direction });
+  }
+
+  return {
+    uri,
+    ports,
+    audioInputs: ports.filter((port) => port.kind === "audio" && port.direction === "input"),
+    audioOutputs: ports.filter((port) => port.kind === "audio" && port.direction === "output"),
+    controlInputs: ports.filter((port) => port.kind === "control" && port.direction === "input")
+  };
 }
 
 export function normalizeSnapshots(raw: unknown): {
