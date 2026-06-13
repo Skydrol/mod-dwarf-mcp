@@ -122,6 +122,14 @@ export type CreateLiveGraphAuthoringPlanInput = z.infer<
   typeof createLiveGraphAuthoringPlanInputSchema
 >;
 
+export const liveGraphExperimentInputSchema = z
+  .object({
+    confirm: z.literal(true)
+  })
+  .strict();
+
+export type LiveGraphExperimentInput = z.infer<typeof liveGraphExperimentInputSchema>;
+
 const dryBundleValidationSchema = z
   .object({
     pluginUris: z

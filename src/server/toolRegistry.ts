@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
+import { runLiveGraphExperimentTool } from "../tools/runLiveGraphExperiment.js";
 import { getDeviceInfoTool } from "../tools/getDeviceInfo.js";
 import { importPedalboardDryBundleTool } from "../tools/importPedalboardDryBundle.js";
 import { inspectPedalboardTool } from "../tools/inspectPedalboard.js";
@@ -172,5 +173,18 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createLiveGraphAuthoringPlanTool(input, context)
+  );
+
+  server.registerTool(
+    "run_live_graph_experiment",
+    {
+      title: "Run a live TinyGain Mono authoring experiment",
+      description:
+        "Experimental write tool: add TinyGain Mono with /effect/add, verify graph state, then remove it with /effect/remove. Does not save or import anything.",
+      inputSchema: {
+        confirm: z.literal(true)
+      }
+    },
+    async (input) => runLiveGraphExperimentTool(input, context)
   );
 }

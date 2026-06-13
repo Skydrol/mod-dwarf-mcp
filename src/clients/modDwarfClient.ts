@@ -8,6 +8,7 @@ export function createClients(config: EnvConfig): {
   http: HttpClient;
   writeHttp: WriteHttpClient | null;
   writeToolsEnabled: boolean;
+  websocketUrl: string;
 } {
   return {
     ssh: new SshClient({
@@ -28,6 +29,7 @@ export function createClients(config: EnvConfig): {
           timeoutMs: config.MOD_DWARF_HTTP_TIMEOUT_MS
         })
       : null,
-    writeToolsEnabled: config.MOD_DWARF_ENABLE_WRITE_TOOLS
+    writeToolsEnabled: config.MOD_DWARF_ENABLE_WRITE_TOOLS,
+    websocketUrl: `ws://${config.MOD_DWARF_HOST}:${config.MOD_DWARF_PORT}/websocket`
   };
 }
