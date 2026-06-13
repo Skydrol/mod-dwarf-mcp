@@ -30,10 +30,10 @@ async function main() {
 
   try {
     // 1. Check if exists
-    const existing = await pedalboardService.listPedalboards("user");
-    if (existing.user.some(pb => pb.title === title)) {
-        console.error(`Pedalboard '${title}' already exists.`);
-        process.exit(1);
+    const exists = await pedalboardService.pedalboardTitleExists(title, "user");
+    if (exists) {
+      console.error(`Pedalboard '${title}' already exists.`);
+      process.exit(1);
     }
 
     // 2. Plan
@@ -63,19 +63,18 @@ async function main() {
     // 5. Save
     console.log(`\nSaving...`);
     const saveRes = await saveService.saveAsNew({
-        title,
-        confirm: true,
-        expectedPluginUris: plan.signalChain.map(p => p.uri).filter((u): u is string => !!u),
-        loadedBundlePath: importRes.loadedGraphValidation.bundlePath ?? undefined
+      title,
+      confirm: true,
+      expectedPluginUris: plan.signalChain.map((p) => p.uri).filter((u): u is string => !!u),
+      loadedBundlePath: importRes.loadedGraphValidation.bundlePath ?? undefined
     });
 
     if (saveRes.saved.success) {
-        console.log("Successfully created and saved pedalboard.");
+      console.log("Successfully created and saved pedalboard.");
     } else {
-        console.error(`Save failed: ${saveRes.saved.error}`);
-        process.exit(1);
+      console.error(`Save failed: ${saveRes.saved.error}`);
+      process.exit(1);
     }
-
   } catch (err) {
     console.error(err);
     process.exit(1);

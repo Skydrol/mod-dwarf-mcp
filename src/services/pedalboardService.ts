@@ -150,6 +150,43 @@ export class PedalboardService {
     );
   }
 
+  async pedalboardTitleExists(
+    title: string,
+    source: "user" | "factory" | "all" = "all"
+  ): Promise<boolean> {
+    const normalizedTarget = this.normalizeTitle(title);
+    const sources =
+      source === "all"
+        ? [USER_PEDALBOARDS, FACTORY_PEDALBOARDS]
+        : source === "user"
+          ? [USER_PEDALBOARDS]
+          : [FACTORY_PEDALBOARDS];
+
+    for (const path of sources) {
+      const result = await this.ssh.exec(
+        `find ${shellQuote(path)} -maxdepth 2 -name '*.pedalboard' -type d`
+      );
+      const bundles = result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      for (const bundlePath of bundles) {
+        const title = await this.resolvePedalboardTitle(bundlePath, []);
+        if (title && this.normalizeTitle(title) === normalizedTarget) return true;
+      }
+    }
+    return false;
+  }
+
+  private normalizeTitle(value: string): string {
+    return value
+      .replace(/\.pedalboard$/, "")
+      .replace(/_/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
   private sourceFromPath(bundlePath: string): PedalboardSource {
     if (
       bundlePath.startsWith(USER_PEDALBOARDS) ||

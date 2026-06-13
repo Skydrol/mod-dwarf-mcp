@@ -32,7 +32,7 @@ async function main() {
       instrument: "Guitar",
       goals: ["Stereo Delay", "Clean Reverb", "Input Gain"]
     });
-    console.log(`Expected Plugin URIs: ${plan.signalChain.map(p => p.uri).join(", ")}`);
+    console.log(`Expected Plugin URIs: ${plan.signalChain.map((p) => p.uri).join(", ")}`);
 
     // 2. Generate Dry Bundle
     console.log("\n2. Generating dry bundle locally...");
@@ -66,7 +66,7 @@ async function main() {
     }
 
     console.log("\nAPI Calls Made:");
-    result.apiCalls.forEach(call => {
+    result.apiCalls.forEach((call) => {
       console.log(`- ${call.method} ${call.path} (${call.purpose}) -> ${call.status}`);
     });
 
@@ -79,7 +79,7 @@ async function main() {
   }
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
