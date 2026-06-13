@@ -75,9 +75,11 @@ export class ImportBundleService {
     }
 
     const importResult = await this.importArchive(archivePath);
-    const loadedGraphValidation = importResult.success
-      ? await this.validateLoadedGraph(input.dryBundle)
-      : undefined;
+    let loadedGraphValidation: LoadedGraphValidation | undefined;
+    if (importResult.success) {
+      await this.activateBundle(input.dryBundle.bundlePath);
+      loadedGraphValidation = await this.validateLoadedGraph(input.dryBundle);
+    }
     return {
       writeToolsEnabled: true,
       confirmed: true,
@@ -94,10 +96,21 @@ export class ImportBundleService {
       directFileWrites: false,
       notes: [
         importResult.success
-          ? "Imported through a MOD UI API endpoint. No direct device file writes were performed."
+          ? "Imported and activated through MOD UI API endpoints."
           : "API import failed. No direct file-write fallback was attempted."
       ]
     };
+  }
+
+  private async activateBundle(bundlePath: string): Promise<void> {
+    const response = await this.writeApiOrThrow().postForm(
+      "/pedalboard/load_bundle/",
+      { bundlepath: bundlePath },
+      "explicitly activate imported bundle"
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to activate bundle ${bundlePath}: HTTP ${response.status}`);
+    }
   }
 
   private disabledResult(confirm: boolean, targetName: string): ImportDryBundleResult {

@@ -47,7 +47,9 @@ export class LiveGraphAuthoringPlanService {
       title
     };
 
-    const pluginPlans = resolvedPlugins.map((resolved, index) => this.toPluginPlan(resolved, index));
+    const pluginPlans = resolvedPlugins.map((resolved, index) =>
+      this.toPluginPlan(resolved, index)
+    );
     const connectionCalls = this.buildConnectionCalls(resolvedPlugins);
     const apiCalls = this.buildApiCalls(pluginPlans, connectionCalls, snapshotSave.included, title);
 
@@ -170,7 +172,12 @@ export class LiveGraphAuthoringPlanService {
 
     for (const resolved of resolvedPlugins) {
       const used = new Set<string>();
-      const plans = this.resolveParameterPlans(resolved.plan, resolved.ports, used, parameterErrors);
+      const plans = this.resolveParameterPlans(
+        resolved.plan,
+        resolved.ports,
+        used,
+        parameterErrors
+      );
       resolved.controlRanges.push(...plans);
       callCount += plans.length;
     }
@@ -350,10 +357,7 @@ export class LiveGraphAuthoringPlanService {
 
     const pairs: Array<[string, string]> = [];
     const first = resolvedPlugins[0];
-    for (const [source, target] of pairPorts(
-      ["capture_1", "capture_2"],
-      inputRefs(first)
-    )) {
+    for (const [source, target] of pairPorts(["capture_1", "capture_2"], inputRefs(first))) {
       pairs.push([source, target]);
     }
 

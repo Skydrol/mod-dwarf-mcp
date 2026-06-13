@@ -147,39 +147,26 @@ export class SaveLoadedPedalboardService {
 
   private async validateExpectedLoadedGraph(input: {
     expectedPluginUris?: string[];
-    loadedBundlePath?: string;
   }): Promise<LoadedGraphValidation | undefined> {
-    if (!input.expectedPluginUris && !input.loadedBundlePath) return undefined;
-    const expectedPluginUris = input.expectedPluginUris ?? [];
-    const bundlePath = input.loadedBundlePath ?? null;
-    if (!bundlePath) {
-      return {
-        attempted: false,
-        success: false,
-        bundlePath,
-        pluginCount: 0,
-        expectedPluginUris,
-        actualPluginUris: [],
-        missingPluginUris: expectedPluginUris,
-        error: "loadedBundlePath is required when expectedPluginUris are provided"
-      };
-    }
+    if (!input.expectedPluginUris) return undefined;
+    const expectedPluginUris = input.expectedPluginUris;
 
     try {
-      const response = await this.writeApiOrThrow().getJson<{ plugins?: Array<{ uri?: string }> }>(
-        `/pedalboard/info/?bundlepath=${encodeURIComponent(bundlePath)}`,
-        "validate currently loaded graph before save"
-      );
+      // Query the active graph without a bundlepath argument
+      const response = await this.writeApiOrThrow().getJson<{
+        title?: string;
+        plugins?: Array<{ uri?: string }>;
+      }>("/pedalboard/info/", "validate currently loaded active graph before save");
       if (!response.ok || !response.value) {
         return {
           attempted: true,
           success: false,
-          bundlePath,
+          bundlePath: "active",
           pluginCount: 0,
           expectedPluginUris,
           actualPluginUris: [],
           missingPluginUris: expectedPluginUris,
-          error: `HTTP ${response.status} from /pedalboard/info/`
+          error: `HTTP ${response.status} from /pedalboard/info/ (active)`
         };
       }
 
@@ -192,23 +179,23 @@ export class SaveLoadedPedalboardService {
       return {
         attempted: true,
         success: actualPluginUris.length > 0 && missingPluginUris.length === 0,
-        bundlePath,
+        bundlePath: "active",
         pluginCount: actualPluginUris.length,
         expectedPluginUris,
         actualPluginUris,
         missingPluginUris,
         error:
           actualPluginUris.length === 0
-            ? "MOD UI reports zero plugins for the loaded bundle"
+            ? "MOD UI reports zero plugins for the active graph"
             : missingPluginUris.length > 0
-              ? "Loaded graph is missing expected plugin URIs"
+              ? "Active graph is missing expected plugin URIs"
               : undefined
       };
     } catch (error) {
       return {
         attempted: true,
         success: false,
-        bundlePath,
+        bundlePath: "active",
         pluginCount: 0,
         expectedPluginUris,
         actualPluginUris: [],

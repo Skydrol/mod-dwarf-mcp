@@ -68,6 +68,28 @@ class MockWriteApi {
       text: ok ? "ok" : "fail"
     };
   }
+
+  async postForm(
+    path: string,
+    fields: Record<string, string | number | boolean>,
+    purpose: string
+  ): Promise<WriteHttpResponse> {
+    expect(path).toBe("/pedalboard/load_bundle/");
+    expect(fields).toEqual({ bundlepath: expect.any(String) });
+    this.calls.push({
+      method: "POST",
+      path,
+      purpose,
+      status: "success",
+      httpStatus: 200
+    });
+    return {
+      ok: true,
+      status: 200,
+      body: Buffer.from("ok"),
+      text: "ok"
+    };
+  }
 }
 
 async function createBundle() {
@@ -120,10 +142,11 @@ describe("ImportBundleService", () => {
     expect(result.backup.required).toBe(true);
     expect(result.backup.created).toBe(true);
     expect(result.import.success).toBe(true);
-    expect(result.apiCalls.map((call) => call.method)).toEqual(["GET", "POST", "GET"]);
+    expect(result.apiCalls.map((call) => call.method)).toEqual(["GET", "POST", "POST", "GET"]);
     expect(result.apiCalls[0].path).toContain("/pedalboard/pack_bundle/?bundlepath=");
     expect(result.apiCalls[1].path).toBe("/pedalboard/load_web/");
-    expect(result.apiCalls[2].path).toContain("/pedalboard/info/?bundlepath=");
+    expect(result.apiCalls[2].path).toBe("/pedalboard/load_bundle/");
+    expect(result.apiCalls[3].path).toContain("/pedalboard/info/?bundlepath=");
     expect(result.loadedGraphValidation?.success).toBe(true);
     expect(result.directFileWrites).toBe(false);
   });

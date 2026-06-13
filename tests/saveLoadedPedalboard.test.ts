@@ -18,7 +18,7 @@ class MockWriteApi {
     path: string,
     purpose: string
   ): Promise<{ ok: boolean; status: number; value: T; text: string }> {
-    expect(path).toContain("/pedalboard/info/?bundlepath=");
+    expect(path).toBe("/pedalboard/info/");
     this.calls.push({ method: "GET", path, purpose, status: "success", httpStatus: 200 });
     const value = { plugins: this.loadedPluginUris.map((uri) => ({ uri })) } as T;
     return { ok: true, status: 200, value, text: JSON.stringify(value) };
