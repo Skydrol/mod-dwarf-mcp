@@ -130,6 +130,16 @@ export const liveGraphExperimentInputSchema = z
 
 export type LiveGraphExperimentInput = z.infer<typeof liveGraphExperimentInputSchema>;
 
+export const liveGraphConnectionExperimentInputSchema = z
+  .object({
+    confirm: z.literal(true)
+  })
+  .strict();
+
+export type LiveGraphConnectionExperimentInput = z.infer<
+  typeof liveGraphConnectionExperimentInputSchema
+>;
+
 const dryBundleValidationSchema = z
   .object({
     pluginUris: z

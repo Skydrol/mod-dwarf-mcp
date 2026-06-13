@@ -7,6 +7,7 @@ import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
+import { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
 import { LiveGraphAuthoringPlanService } from "../services/liveGraphAuthoringPlan.js";
 import { LiveGraphExperimentService } from "../services/liveGraphExperimentService.js";
 import { LoadExistingPedalboardService } from "../services/loadExistingPedalboardService.js";
@@ -42,6 +43,11 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     pedalboardPlannerService: new PedalboardPlannerService(pluginService, pedalboardService),
     liveGraphAuthoringPlanService: new LiveGraphAuthoringPlanService(pluginService),
     liveGraphExperimentService: new LiveGraphExperimentService(
+      pluginService,
+      deps.writeHttp ?? null,
+      deps.websocketUrl
+    ),
+    liveGraphConnectionExperimentService: new LiveGraphConnectionExperimentService(
       pluginService,
       deps.writeHttp ?? null,
       deps.websocketUrl

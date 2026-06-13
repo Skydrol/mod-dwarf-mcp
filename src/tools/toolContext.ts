@@ -2,6 +2,7 @@ import type { BankService } from "../services/bankService.js";
 import type { DeviceService } from "../services/deviceService.js";
 import type { DryBundleService } from "../services/dryBundleService.js";
 import type { LiveGraphAuthoringPlanService } from "../services/liveGraphAuthoringPlan.js";
+import type { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
 import type { LiveGraphExperimentService } from "../services/liveGraphExperimentService.js";
 import type { ImportBundleService } from "../services/importBundleService.js";
 import type { LoadExistingPedalboardService } from "../services/loadExistingPedalboardService.js";
@@ -20,6 +21,7 @@ export interface ToolContext {
   pedalboardPlannerService: PedalboardPlannerService;
   liveGraphAuthoringPlanService: LiveGraphAuthoringPlanService;
   liveGraphExperimentService: LiveGraphExperimentService;
+  liveGraphConnectionExperimentService: LiveGraphConnectionExperimentService;
   dryBundleService: DryBundleService;
   importBundleService: ImportBundleService;
   saveLoadedPedalboardService: SaveLoadedPedalboardService;

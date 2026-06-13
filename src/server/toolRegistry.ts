@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
+import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
 import { runLiveGraphExperimentTool } from "../tools/runLiveGraphExperiment.js";
 import { getDeviceInfoTool } from "../tools/getDeviceInfo.js";
 import { importPedalboardDryBundleTool } from "../tools/importPedalboardDryBundle.js";
@@ -186,5 +187,18 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => runLiveGraphExperimentTool(input, context)
+  );
+
+  server.registerTool(
+    "run_live_graph_connection_experiment",
+    {
+      title: "Run a live two-plugin connection experiment",
+      description:
+        "Experimental write tool: add TinyGain Mono and Bollie Delay, connect them, verify websocket readback, disconnect, and remove both plugins. Does not save or import anything.",
+      inputSchema: {
+        confirm: z.literal(true)
+      }
+    },
+    async (input) => runLiveGraphConnectionExperimentTool(input, context)
   );
 }
