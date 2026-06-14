@@ -80,6 +80,7 @@ export class PedalboardPlannerService {
   private rolesFor(input: PedalboardPlanInput): RoleSpec[] {
     const text =
       `${input.style} ${input.instrument} ${input.goals.join(" ")} ${(input.referenceArtists ?? []).join(" ")}`.toLowerCase();
+    const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
     const roles: RoleSpec[] = [];
 
     roles.push({
@@ -122,6 +123,14 @@ export class PedalboardPlannerService {
         }
       });
       roles.push(cabinetRole());
+    } else if (isLetItHappenBoard) {
+      roles.push({
+        role: "core tone",
+        preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "AIDA-X", "Neural Amp Modeler"],
+        fallback: ["Volume", "TinyGain Stereo"],
+        reason: "Song-safe clean gain staging before modulation, delay, and reverb.",
+        parameterRanges: { Gain: { min: -9, max: 4, unit: "dB" } }
+      });
     } else if (matches(text, ["clean", "ambient", "jazz", "post rock", "shoegaze"])) {
       roles.push({
         role: "clean tone shaper",
@@ -175,6 +184,25 @@ export class PedalboardPlannerService {
       });
     }
 
+    if (isLetItHappenBoard) {
+      roles.push({
+        role: "modulation",
+        preferred: [
+          "TAP Chorus/Flanger",
+          "Calf Flanger",
+          "GxFlanger",
+          "CS Chorus 1",
+          "Triple chorus"
+        ],
+        reason: "Tame Impala style width and drift for the song arrangement.",
+        parameterRanges: {
+          rate: { min: 0.15, max: 1.2, unit: "Hz" },
+          depth: { min: 0.2, max: 0.8 },
+          mix: { min: 12, max: 50, unit: "%" }
+        }
+      });
+    }
+
     if (matches(text, ["delay", "echo", "ambient", "lead", "solo", "dub", "post rock"])) {
       roles.push({
         role: "delay",
@@ -184,6 +212,19 @@ export class PedalboardPlannerService {
           time: { min: 250, max: 650, unit: "ms" },
           feedback: { min: 15, max: 55, unit: "%" },
           mix: { min: 10, max: 40, unit: "%" }
+        }
+      });
+    }
+
+    if (isLetItHappenBoard) {
+      roles.push({
+        role: "delay",
+        preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
+        reason: "Song-specific delay wash and rhythmic repeats for Let It Happen sections.",
+        parameterRanges: {
+          time: { min: 280, max: 720, unit: "ms" },
+          feedback: { min: 18, max: 62, unit: "%" },
+          mix: { min: 12, max: 44, unit: "%" }
         }
       });
     }
@@ -202,6 +243,24 @@ export class PedalboardPlannerService {
         parameterRanges: {
           decay: { min: 1.2, max: 6.5, unit: "s" },
           mix: { min: 8, max: 45, unit: "%" }
+        }
+      });
+    }
+
+    if (isLetItHappenBoard) {
+      roles.push({
+        role: "reverb",
+        preferred: [
+          "Dragonfly Hall Reverb",
+          "Dragonfly Plate Reverb",
+          "MVerb",
+          "Shiroverb",
+          "TAL-Reverb-II"
+        ],
+        reason: "Adds a wide atmospheric tail to match the song's expansive sections.",
+        parameterRanges: {
+          decay: { min: 1.8, max: 7.5, unit: "s" },
+          mix: { min: 10, max: 38, unit: "%" }
         }
       });
     }
@@ -256,9 +315,63 @@ export class PedalboardPlannerService {
     input: PedalboardPlanInput,
     signalChain: PlannedPlugin[]
   ): PlannedSnapshot[] {
+    const text =
+      `${input.style} ${input.instrument} ${input.goals.join(" ")} ${(input.referenceArtists ?? []).join(" ")}`.toLowerCase();
+    const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
     const hasDelay = signalChain.some((plugin) => plugin.role === "delay");
     const hasReverb = signalChain.some((plugin) => plugin.role === "reverb");
     const hasDrive = signalChain.some((plugin) => /drive|gain|core tone/.test(plugin.role));
+
+    if (isLetItHappenBoard) {
+      const snapshots: PlannedSnapshot[] = [
+        {
+          name: "Intro Drift",
+          description: "Soft, wide shimmer with restrained saturation and long space.",
+          parameterFocus: {
+            modulation: "gentle width and slow motion",
+            delay: "low mix with audible repeats",
+            reverb: "long tail, lower mix"
+          }
+        },
+        {
+          name: "Verse Pulse",
+          description: "Tighter pulse with enough movement to keep the riff alive.",
+          parameterFocus: {
+            gain: "slightly stronger input drive",
+            modulation: "medium depth",
+            delay: "medium feedback and mix"
+          }
+        },
+        {
+          name: "Chorus Bloom",
+          description: "Wider, more obvious modulation and delay for the big section.",
+          parameterFocus: {
+            modulation: "higher mix and depth",
+            delay: "bigger repeats",
+            reverb: "noticeable wash"
+          }
+        },
+        {
+          name: "Bridge Collapse",
+          description: "Pulls back the core level while letting the ambience hang.",
+          parameterFocus: {
+            gain: "slightly reduced output",
+            delay: "wider feedback spread",
+            reverb: "more tail than earlier snapshots"
+          }
+        },
+        {
+          name: "Lead Lift",
+          description: "Ends with the most forward and open version of the chain.",
+          parameterFocus: {
+            gain: "small level lift if available",
+            delay: "balanced mix",
+            reverb: "full but controlled tail"
+          }
+        }
+      ];
+      return snapshots;
+    }
 
     const snapshots: PlannedSnapshot[] = [
       {

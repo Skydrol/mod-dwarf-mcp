@@ -39,6 +39,31 @@ describe("PedalboardPlannerService", () => {
     }
   });
 
+  it("special-cases Tame Impala Let It Happen snapshots", async () => {
+    const runner = new MockRunner();
+    const pluginService = new PluginService(runner);
+    const planner = new PedalboardPlannerService(pluginService, new PedalboardService(runner));
+
+    const plan = await planner.planFromPrompt({
+      style: "psychedelic pop",
+      instrument: "guitar",
+      goals: ["Let It Happen", "Tame Impala vibe", "song snapshots"],
+      referenceArtists: ["Tame Impala"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["input gain", "core tone", "reverb", "output level"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toContain("Base");
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual([
+      "Intro Drift",
+      "Verse Pulse",
+      "Chorus Bloom",
+      "Bridge Collapse",
+      "Lead Lift"
+    ]);
+  });
+
   it("exposes the planner through the MCP tool adapter", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
