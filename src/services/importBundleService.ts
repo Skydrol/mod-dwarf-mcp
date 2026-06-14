@@ -103,13 +103,14 @@ export class ImportBundleService {
   }
 
   private async activateBundle(bundlePath: string): Promise<void> {
+    const deviceBundlePath = `/tmp/pedalboards/${basename(bundlePath)}`;
     const response = await this.writeApiOrThrow().postForm(
       "/pedalboard/load_bundle/",
-      { bundlepath: bundlePath },
+      { bundlepath: deviceBundlePath },
       "explicitly activate imported bundle"
     );
     if (!response.ok) {
-      throw new Error(`Failed to activate bundle ${bundlePath}: HTTP ${response.status}`);
+      throw new Error(`Failed to activate bundle ${deviceBundlePath}: HTTP ${response.status}`);
     }
   }
 

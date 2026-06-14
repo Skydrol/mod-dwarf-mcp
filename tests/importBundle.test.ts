@@ -75,7 +75,9 @@ class MockWriteApi {
     purpose: string
   ): Promise<WriteHttpResponse> {
     expect(path).toBe("/pedalboard/load_bundle/");
-    expect(fields).toEqual({ bundlepath: expect.any(String) });
+    expect(fields).toEqual({
+      bundlepath: expect.stringMatching(/^\/tmp\/pedalboards\/.+\.pedalboard$/)
+    });
     this.calls.push({
       method: "POST",
       path,
@@ -146,6 +148,7 @@ describe("ImportBundleService", () => {
     expect(result.apiCalls[0].path).toContain("/pedalboard/pack_bundle/?bundlepath=");
     expect(result.apiCalls[1].path).toBe("/pedalboard/load_web/");
     expect(result.apiCalls[2].path).toBe("/pedalboard/load_bundle/");
+    expect(result.apiCalls[2].error).toBeUndefined();
     expect(result.apiCalls[3].path).toContain("/pedalboard/info/?bundlepath=");
     expect(result.loadedGraphValidation?.success).toBe(true);
     expect(result.directFileWrites).toBe(false);
