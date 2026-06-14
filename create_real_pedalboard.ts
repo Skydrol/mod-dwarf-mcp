@@ -13,7 +13,7 @@ async function main() {
 
   const pluginService = new PluginService(clients.ssh);
   const pedalboardService = new PedalboardService(clients.ssh);
-  const planner = new PedalboardPlannerService(pluginService, pedalboardService);
+  const planner = new PedalboardPlannerService(pluginService);
   const dryBundleService = new DryBundleService(pluginService);
   const importService = new ImportBundleService(
     pedalboardService,

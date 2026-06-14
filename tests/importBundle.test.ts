@@ -96,7 +96,7 @@ async function createBundle() {
   const runner = new MockRunner();
   const pluginService = new PluginService(runner);
   const pedalboardService = new PedalboardService(runner);
-  const planner = new PedalboardPlannerService(pluginService, pedalboardService);
+  const planner = new PedalboardPlannerService(pluginService);
   const dryBundleService = new DryBundleService(pluginService);
   const plan = await planner.planFromPrompt({
     style: "clean ambient",

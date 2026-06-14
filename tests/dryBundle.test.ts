@@ -11,7 +11,7 @@ describe("DryBundleService", () => {
   it("generates a complete local dry-run pedalboard bundle", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
-    const planner = new PedalboardPlannerService(pluginService, new PedalboardService(runner));
+    const planner = new PedalboardPlannerService(pluginService);
     const service = new DryBundleService(pluginService);
     const plan = await planner.planFromPrompt({
       style: "clean ambient",
@@ -56,7 +56,7 @@ describe("DryBundleService", () => {
   it("reports plugins without URIs as invalid", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
-    const planner = new PedalboardPlannerService(pluginService, new PedalboardService(runner));
+    const planner = new PedalboardPlannerService(pluginService);
     const service = new DryBundleService(pluginService);
     const plan = await planner.planFromPrompt({
       style: "clean ambient",
@@ -77,7 +77,7 @@ describe("DryBundleService", () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
     const pedalboardService = new PedalboardService(runner);
-    const planner = new PedalboardPlannerService(pluginService, pedalboardService);
+    const planner = new PedalboardPlannerService(pluginService);
     const plan = await planner.planFromPrompt({
       style: "ambient",
       instrument: "guitar",

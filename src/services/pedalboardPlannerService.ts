@@ -4,7 +4,6 @@ import type {
   PlannedPlugin,
   PlannedSnapshot
 } from "../types/plan.js";
-import type { PedalboardService } from "./pedalboardService.js";
 import type { PluginService } from "./pluginService.js";
 
 interface PluginCandidate {
@@ -21,10 +20,7 @@ interface RoleSpec {
 }
 
 export class PedalboardPlannerService {
-  constructor(
-    private readonly pluginService: PluginService,
-    private readonly pedalboardService: PedalboardService
-  ) {}
+  constructor(private readonly pluginService: PluginService) {}
 
   async planFromPrompt(input: PedalboardPlanInput): Promise<PedalboardPlan> {
     const pluginList = await this.pluginService.listPlugins("both");
@@ -32,10 +28,6 @@ export class PedalboardPlannerService {
       name: plugin.name ?? plugin.uri ?? "",
       uri: plugin.uri
     }));
-    const pedalboards = await this.pedalboardService.listPedalboards("all");
-    const template = this.chooseTemplate(
-      pedalboards.user.length > 0 ? pedalboards.user : pedalboards.factory
-    );
     const roles = this.rolesFor(input);
     const unsupportedIdeas: string[] = [];
 
@@ -57,20 +49,13 @@ export class PedalboardPlannerService {
         callsPostEndpoints: false
       },
       request: input,
-      template: template
-        ? {
-            title: template.title,
-            bundlePath: template.bundlePath,
-            source: template.source,
-            reason: "Selected as a simple existing bundle to mirror MOD pedalboard structure."
-          }
-        : null,
+      template: null,
       availablePluginCount: pluginList.count,
       signalChain,
       snapshots: this.proposeSnapshots(input, signalChain),
       notes: [
         "Dry-run plan only; no files were written and no POST/PUT/PATCH/DELETE endpoints were called.",
-        "Only installed plugins returned by list_plugins are selected.",
+        "Only plugins present in the bundled local catalog are selected in the normal flow.",
         "Parameter ranges are starting ranges for a future generator, not live device settings."
       ],
       unsupportedIdeas
@@ -298,19 +283,6 @@ export class PedalboardPlannerService {
       parameterRanges: role.parameterRanges
     };
   }
-
-  private chooseTemplate(
-    pedalboards: Array<{ title: string | null; bundlePath: string; source: "user" | "factory" }>
-  ) {
-    return (
-      pedalboards.find((pedalboard) =>
-        /default|basic|simple|gain/i.test(`${pedalboard.title ?? ""} ${pedalboard.bundlePath}`)
-      ) ??
-      pedalboards[0] ??
-      null
-    );
-  }
-
   private proposeSnapshots(
     input: PedalboardPlanInput,
     signalChain: PlannedPlugin[]

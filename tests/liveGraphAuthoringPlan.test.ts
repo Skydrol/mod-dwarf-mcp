@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LiveGraphAuthoringPlanService } from "../src/services/liveGraphAuthoringPlan.js";
 import { PedalboardPlannerService } from "../src/services/pedalboardPlannerService.js";
-import { PedalboardService } from "../src/services/pedalboardService.js";
 import { PluginService } from "../src/services/pluginService.js";
 import { MockRunner } from "./mockRunner.js";
 import type { PedalboardPlan } from "../src/types/plan.js";
@@ -155,8 +154,7 @@ describe("LiveGraphAuthoringPlanService", () => {
   it("matches the planner's installed-plugin output", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
-    const pedalboardService = new PedalboardService(runner);
-    const planner = new PedalboardPlannerService(pluginService, pedalboardService);
+    const planner = new PedalboardPlannerService(pluginService);
 
     const planned = await planner.planFromPrompt({
       style: "clean ambient",

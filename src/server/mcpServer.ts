@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CommandRunner } from "../clients/sshClient.js";
 import type { HttpClient } from "../clients/httpClient.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import { pluginCatalog } from "../data/pluginCatalog.js";
 import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
@@ -33,7 +34,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     version: "0.1.0"
   });
 
-  const pluginService = new PluginService(deps.ssh);
+  const pluginService = new PluginService(null, pluginCatalog);
   const pedalboardService = new PedalboardService(deps.ssh);
   const context = {
     deviceService: new DeviceService(deps.ssh),
@@ -41,7 +42,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     pedalboardService,
     bankService: new BankService(deps.ssh),
     snapshotService: new SnapshotService(deps.ssh),
-    pedalboardPlannerService: new PedalboardPlannerService(pluginService, pedalboardService),
+    pedalboardPlannerService: new PedalboardPlannerService(pluginService),
     liveGraphAuthoringPlanService: new LiveGraphAuthoringPlanService(pluginService),
     liveGraphBuilderService: new LiveGraphBuilderService(
       deps.writeHttp ?? null,

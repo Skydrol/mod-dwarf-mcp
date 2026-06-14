@@ -9,7 +9,7 @@ describe("PedalboardPlannerService", () => {
   it("returns a dry-run plan using only installed plugins", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
-    const planner = new PedalboardPlannerService(pluginService, new PedalboardService(runner));
+    const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
       style: "clean ambient",
@@ -25,10 +25,7 @@ describe("PedalboardPlannerService", () => {
       callsPostEndpoints: false
     });
     expect(plan.availablePluginCount).toBe(2);
-    expect([
-      "/root/.pedalboards/Dave.pedalboard",
-      "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard"
-    ]).toContain(plan.template?.bundlePath);
+    expect(plan.template).toBeNull();
     expect(plan.signalChain.length).toBeGreaterThan(0);
 
     const installedNames = new Set(
@@ -42,7 +39,7 @@ describe("PedalboardPlannerService", () => {
   it("special-cases Tame Impala Let It Happen snapshots", async () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
-    const planner = new PedalboardPlannerService(pluginService, new PedalboardService(runner));
+    const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
       style: "psychedelic pop",
@@ -68,7 +65,7 @@ describe("PedalboardPlannerService", () => {
     const runner = new MockRunner();
     const pluginService = new PluginService(runner);
     const pedalboardService = new PedalboardService(runner);
-    const planner = new PedalboardPlannerService(pluginService, pedalboardService);
+    const planner = new PedalboardPlannerService(pluginService);
 
     const response = await planPedalboardFromPromptTool(
       {
