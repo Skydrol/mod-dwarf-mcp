@@ -5,6 +5,7 @@ import type {
   LiveGraphExperimentResult
 } from "../types/liveGraphExperiment.js";
 import type { ApiCallRecord } from "../types/importBundle.js";
+import { canonicalGraphRef, uiGraphInstancePath } from "./liveGraphRefs.js";
 
 export interface ExperimentWebSocketLike {
   onopen: ((event: unknown) => void) | null;
@@ -73,7 +74,7 @@ export class LiveGraphExperimentService {
     let websocketAfterRemove = websocketBefore;
 
     try {
-      const addPath = `/effect/add/${plugin.instance}?x=${DEFAULT_X}&y=${DEFAULT_Y}&uri=${legacyEscape(
+      const addPath = `/effect/add/${uiGraphInstancePath(plugin.instance)}?x=${DEFAULT_X}&y=${DEFAULT_Y}&uri=${legacyEscape(
         plugin.uri
       )}`;
       const addResponse = await this.writeApi.getBytes(
@@ -96,7 +97,7 @@ export class LiveGraphExperimentService {
       inspectionAfterAdd = await this.inspectActiveGraph(apiCalls, "after add");
       websocketAfterAdd = monitor.captureState();
 
-      const removePath = `/effect/remove/${plugin.instance}`;
+      const removePath = `/effect/remove/${uiGraphInstancePath(plugin.instance)}`;
       const removeResponse = await this.writeApi.getBytes(
         removePath,
         "remove TinyGain Mono from the active graph"
@@ -191,7 +192,7 @@ export class LiveGraphExperimentService {
     } finally {
       if (addSucceeded && !removeSucceeded) {
         try {
-          const cleanupPath = `/effect/remove/${plugin.instance}`;
+          const cleanupPath = `/effect/remove/${uiGraphInstancePath(plugin.instance)}`;
           const cleanupResponse = await this.writeApi.getBytes(
             cleanupPath,
             "cleanup TinyGain Mono experiment"
@@ -532,7 +533,9 @@ function pause(ms: number): Promise<void> {
 }
 
 function matchesGraphEvent(raw: string, kind: "add" | "remove", instance: string): boolean {
-  return raw.startsWith(`${kind} ${instance}`) || raw.startsWith(`${kind} /${instance}`);
+  const parsed = parseGraphMessage(raw);
+  if (parsed.type !== kind) return false;
+  return canonicalGraphRef(parsed.instance ?? "") === canonicalGraphRef(instance);
 }
 
 function defaultWebSocketFactory(url: string): ExperimentWebSocketLike {

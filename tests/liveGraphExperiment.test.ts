@@ -69,13 +69,13 @@ describe("LiveGraphExperimentService", () => {
         if (path.startsWith("/effect/add/")) {
           activeUris.push("http://gareus.org/oss/lv2/tinygain#mono");
           socket.emit(
-            "add tinygain_mono_experiment http://gareus.org/oss/lv2/tinygain#mono 120 120 false 0 0"
+            "add /graph/tinygain_mono_experiment http://gareus.org/oss/lv2/tinygain#mono 120 120 false 0 0"
           );
         }
         if (path.startsWith("/effect/remove/")) {
           const index = activeUris.indexOf("http://gareus.org/oss/lv2/tinygain#mono");
           if (index >= 0) activeUris.splice(index, 1);
-          socket.emit("remove tinygain_mono_experiment");
+          socket.emit("remove /graph/tinygain_mono_experiment");
         }
         return {
           ok: true,
@@ -115,9 +115,9 @@ describe("LiveGraphExperimentService", () => {
     );
     expect(writeApi.calls.map((call) => call.path)).toEqual([
       "/pedalboard/info/",
-      "/effect/add/tinygain_mono_experiment?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+      "/effect/add//graph/tinygain_mono_experiment?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
       "/pedalboard/info/",
-      "/effect/remove/tinygain_mono_experiment",
+      "/effect/remove//graph/tinygain_mono_experiment",
       "/pedalboard/info/"
     ]);
   });

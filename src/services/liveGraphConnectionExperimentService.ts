@@ -10,6 +10,12 @@ import type {
   ExperimentWebSocketFactory,
   ExperimentWebSocketLike
 } from "./liveGraphExperimentService.js";
+import {
+  canonicalGraphRef,
+  graphEdgeKey,
+  uiGraphInstancePath,
+  uiGraphRef
+} from "./liveGraphRefs.js";
 
 const TINYGAIN_INSTANCE = "tinygain_mono_experiment";
 const BOLLIE_INSTANCE = "bollie_delay_experiment";
@@ -179,8 +185,8 @@ export class LiveGraphConnectionExperimentService {
       const expectedEdgesObserved = EXPECTED_CONNECTIONS.every((connection) =>
         afterConnects.edges.some(
           (edge) =>
-            edge.source === canonicalRef(connection.source) &&
-            edge.target === canonicalRef(connection.target)
+            edge.source === canonicalGraphRef(connection.source) &&
+            edge.target === canonicalGraphRef(connection.target)
         )
       );
 
@@ -264,7 +270,7 @@ export class LiveGraphConnectionExperimentService {
   }
 
   private addPath(plugin: LiveGraphConnectionExperimentPlugin): string {
-    return `/effect/add/${plugin.instance}?x=${plugin.x}&y=${plugin.y}&uri=${legacyEscape(plugin.uri)}`;
+    return `/effect/add/${uiGraphInstancePath(plugin.instance)}?x=${plugin.x}&y=${plugin.y}&uri=${legacyEscape(plugin.uri)}`;
   }
 
   private connectPath(source: string, target: string): string {
@@ -276,7 +282,7 @@ export class LiveGraphConnectionExperimentService {
   }
 
   private removePath(instance: string): string {
-    return `/effect/remove/${instance}`;
+    return `/effect/remove/${uiGraphInstancePath(instance)}`;
   }
 
   private disconnectFromConnectPath(connectPath: string): string {
@@ -436,16 +442,16 @@ class GraphStateMonitor {
         this.messages.push(message);
         const parsed = parseGraphMessage(message);
         if (parsed.type === "add" && parsed.instance && parsed.uri) {
-          this.nodes.set(canonicalRef(parsed.instance), parsed.uri);
+          this.nodes.set(canonicalGraphRef(parsed.instance), parsed.uri);
         }
         if (parsed.type === "remove" && parsed.instance) {
-          this.nodes.delete(canonicalRef(parsed.instance));
+          this.nodes.delete(canonicalGraphRef(parsed.instance));
         }
         if (parsed.type === "connect" && parsed.source && parsed.target) {
-          this.edges.add(edgeKey(parsed.source, parsed.target));
+          this.edges.add(graphEdgeKey(parsed.source, parsed.target));
         }
         if (parsed.type === "disconnect" && parsed.source && parsed.target) {
-          this.edges.delete(edgeKey(parsed.source, parsed.target));
+          this.edges.delete(graphEdgeKey(parsed.source, parsed.target));
         }
         for (let index = 0; index < this.waiters.length; index += 1) {
           const waiter = this.waiters[index];
@@ -486,7 +492,9 @@ function parseGraphMessage(
 function matchesInstanceEvent(raw: string, kind: "add" | "remove", instance: string): boolean {
   const parsed = parseGraphMessage(raw);
   if (parsed.type !== kind) return false;
-  return "instance" in parsed && canonicalRef(parsed.instance ?? "") === canonicalRef(instance);
+  return (
+    "instance" in parsed && canonicalGraphRef(parsed.instance ?? "") === canonicalGraphRef(instance)
+  );
 }
 
 function matchesConnectionEvent(
@@ -498,24 +506,9 @@ function matchesConnectionEvent(
   const parsed = parseGraphMessage(raw);
   if (parsed.type !== kind) return false;
   return (
-    canonicalRef(parsed.source ?? "") === canonicalRef(source) &&
-    canonicalRef(parsed.target ?? "") === canonicalRef(target)
+    canonicalGraphRef(parsed.source ?? "") === canonicalGraphRef(source) &&
+    canonicalGraphRef(parsed.target ?? "") === canonicalGraphRef(target)
   );
-}
-
-function canonicalRef(value: string): string {
-  return value
-    .trim()
-    .replace(/^(?:\/graph\/|graph\/)/, "")
-    .replace(/^\//, "");
-}
-
-function uiGraphRef(value: string): string {
-  return `/graph/${canonicalRef(value)}`;
-}
-
-function edgeKey(source: string, target: string): string {
-  return `${canonicalRef(source)}->${canonicalRef(target)}`;
 }
 
 function graphStateEquals(
@@ -534,12 +527,12 @@ function graphStateEquals(
 ): boolean {
   return (
     arraysEqual(
-      a.nodes.map((node) => `${canonicalRef(node.instance)}=${node.uri}`).sort(),
-      b.nodes.map((node) => `${canonicalRef(node.instance)}=${node.uri}`).sort()
+      a.nodes.map((node) => `${canonicalGraphRef(node.instance)}=${node.uri}`).sort(),
+      b.nodes.map((node) => `${canonicalGraphRef(node.instance)}=${node.uri}`).sort()
     ) &&
     arraysEqual(
-      a.edges.map((edge) => edgeKey(edge.source, edge.target)).sort(),
-      b.edges.map((edge) => edgeKey(edge.source, edge.target)).sort()
+      a.edges.map((edge) => graphEdgeKey(edge.source, edge.target)).sort(),
+      b.edges.map((edge) => graphEdgeKey(edge.source, edge.target)).sort()
     )
   );
 }

@@ -80,14 +80,16 @@ describe("LiveGraphConnectionExperimentService", () => {
       calls: [] as Array<{ method: string; path: string }>,
       async getBytes(path: string): Promise<WriteHttpResponse> {
         this.calls.push({ method: "GET", path });
-        if (path.startsWith("/effect/add/tinygain_mono_experiment")) {
+        if (path.startsWith("/effect/add//graph/tinygain_mono_experiment")) {
           nodes.set("tinygain_mono_experiment", "http://gareus.org/oss/lv2/tinygain#mono");
           socket.emit(
-            "add /tinygain_mono_experiment http://gareus.org/oss/lv2/tinygain#mono 120 120 0 0 0"
+            "add /graph/tinygain_mono_experiment http://gareus.org/oss/lv2/tinygain#mono 120 120 0 0 0"
           );
-        } else if (path.startsWith("/effect/add/bollie_delay_experiment")) {
+        } else if (path.startsWith("/effect/add//graph/bollie_delay_experiment")) {
           nodes.set("bollie_delay_experiment", "https://ca9.eu/lv2/bolliedelay");
-          socket.emit("add /bollie_delay_experiment https://ca9.eu/lv2/bolliedelay 360 140 0 0 0");
+          socket.emit(
+            "add /graph/bollie_delay_experiment https://ca9.eu/lv2/bolliedelay 360 140 0 0 0"
+          );
         } else if (path.startsWith("/effect/connect/")) {
           const [, pair] = path.split("/effect/connect/");
           const [source, target] = pair.split(",", 2);
@@ -98,12 +100,12 @@ describe("LiveGraphConnectionExperimentService", () => {
           const [source, target] = pair.split(",", 2);
           edges.delete(`${source}->${target}`);
           socket.emit(`disconnect ${source} ${target}`);
-        } else if (path === "/effect/remove/bollie_delay_experiment") {
+        } else if (path === "/effect/remove//graph/bollie_delay_experiment") {
           nodes.delete("bollie_delay_experiment");
-          socket.emit("remove /bollie_delay_experiment");
-        } else if (path === "/effect/remove/tinygain_mono_experiment") {
+          socket.emit("remove /graph/bollie_delay_experiment");
+        } else if (path === "/effect/remove//graph/tinygain_mono_experiment") {
           nodes.delete("tinygain_mono_experiment");
-          socket.emit("remove /tinygain_mono_experiment");
+          socket.emit("remove /graph/tinygain_mono_experiment");
         }
         return {
           ok: true,
@@ -125,8 +127,8 @@ describe("LiveGraphConnectionExperimentService", () => {
 
     expect(result.success).toBe(true);
     expect(result.apiCalls.map((call) => call.path)).toEqual([
-      "/effect/add/tinygain_mono_experiment?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
-      "/effect/add/bollie_delay_experiment?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+      "/effect/add//graph/tinygain_mono_experiment?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+      "/effect/add//graph/bollie_delay_experiment?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
       "/effect/connect//graph/capture_1,/graph/tinygain_mono_experiment/in",
       "/effect/connect//graph/tinygain_mono_experiment/out,/graph/bollie_delay_experiment/in_l",
       "/effect/connect//graph/tinygain_mono_experiment/out,/graph/bollie_delay_experiment/in_r",
@@ -137,8 +139,8 @@ describe("LiveGraphConnectionExperimentService", () => {
       "/effect/disconnect//graph/tinygain_mono_experiment/out,/graph/bollie_delay_experiment/in_r",
       "/effect/disconnect//graph/tinygain_mono_experiment/out,/graph/bollie_delay_experiment/in_l",
       "/effect/disconnect//graph/capture_1,/graph/tinygain_mono_experiment/in",
-      "/effect/remove/bollie_delay_experiment",
-      "/effect/remove/tinygain_mono_experiment"
+      "/effect/remove//graph/bollie_delay_experiment",
+      "/effect/remove//graph/tinygain_mono_experiment"
     ]);
 
     expect(result.websocket.finalMatchesBaseline).toBe(true);

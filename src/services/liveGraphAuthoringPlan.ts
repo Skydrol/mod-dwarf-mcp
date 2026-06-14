@@ -9,6 +9,7 @@ import type {
   LiveGraphPortRange
 } from "../types/liveGraphAuthoringPlan.js";
 import type { PluginPort, PluginPortInfo } from "../types/plugin.js";
+import { uiGraphInstancePath } from "./liveGraphRefs.js";
 
 interface ResolvedPlugin {
   plan: PlannedPlugin;
@@ -335,7 +336,7 @@ export class LiveGraphAuthoringPlanService {
   private effectAddCall(instance: string, uri: string, x: number, y: number): LiveGraphApiCall {
     return {
       method: "GET",
-      path: `/effect/add/${instance}?x=${x}&y=${y}&uri=${legacyEscape(uri)}`,
+      path: `/effect/add/${uiGraphInstancePath(instance)}?x=${x}&y=${y}&uri=${legacyEscape(uri)}`,
       purpose: `add plugin instance ${instance}`,
       body: { kind: "none" }
     };
