@@ -6,10 +6,10 @@ async function main() {
   const clients = createClients(config);
 
   const res = await clients.http.getJson(
-    "/pedalboard/info/?bundlepath=%2Froot%2F.pedalboards%2FAI_PORT_FIX_REAL_01.pedalboard",
+    "/pedalboard/info/?bundlepath=%2Froot%2F.pedalboards%2FAI_PORT_FIX_REAL.pedalboard",
     "verify saved pedalboard"
   );
-  console.log(JSON.stringify(res.value, null, 2));
+  console.log(JSON.stringify(res, null, 2));
 }
 
 main().catch(console.error);

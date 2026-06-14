@@ -88,6 +88,24 @@ describe("parsers", () => {
     ]);
   });
 
+  it("handles CRLF line endings in pedalboard and lv2info parsing", () => {
+    const ttl = readFileSync(join(fixtureRoot, "pedalboards/Dave.pedalboard/Dave.ttl"), "utf8")
+      .replace(/\r?\n/g, "\r\n");
+    const lv2info = readFileSync(join(fixtureRoot, "lv2/lv2info/gain.txt"), "utf8").replace(
+      /\r?\n/g,
+      "\r\n"
+    );
+
+    expect(extractPluginsUsed(ttl)).toEqual([
+      { instance: "Gain", uri: "http://moddevices.com/plugins/mod-devel/Gain" }
+    ]);
+    expect(
+      parseLv2InfoPorts(lv2info, "http://moddevices.com/plugins/mod-devel/Gain").controlInputs.find(
+        (port) => port.symbol === "Gain"
+      )?.maximum
+    ).toBe(40);
+  });
+
   it("parses banks", () => {
     const banks = parseBanks(readFileSync(join(fixtureRoot, "banks/user-banks.json"), "utf8"));
     expect(banks[0].title).toBe("User Bank");

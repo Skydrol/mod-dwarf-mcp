@@ -75,9 +75,10 @@ export function extractMainTtlFromManifest(manifest: string): string | null {
 }
 
 export function extractPluginsUsed(ttl: string): Array<{ instance: string; uri: string }> {
+  const normalized = ttl.replace(/\r\n/g, "\n");
   const stanzaRegex = /^<([^>]+)>\n([\s\S]*?)(?=\n<|\n_:|\n$)/gm;
   const plugins: Array<{ instance: string; uri: string }> = [];
-  for (const match of ttl.matchAll(stanzaRegex)) {
+  for (const match of normalized.matchAll(stanzaRegex)) {
     const subject = match[1];
     const body = match[2];
     const prototype = body.match(/lv2:prototype\s+<([^>]+)>/)?.[1];
@@ -98,9 +99,10 @@ export function extractDoapName(ttl: string): string | null {
 }
 
 export function parseLv2InfoPorts(text: string, uri: string): PluginPortInfo {
+  const normalized = text.replace(/\r\n/g, "\n");
   const ports: PluginPort[] = [];
   const portRegex = /Port\s+(\d+):([\s\S]*?)(?=\n\s*Port\s+\d+:|\n*$)/g;
-  for (const match of text.matchAll(portRegex)) {
+  for (const match of normalized.matchAll(portRegex)) {
     const index = Number(match[1]);
     const block = match[2];
     const symbol = block.match(/Symbol:\s+([^\n]+)/)?.[1]?.trim();
