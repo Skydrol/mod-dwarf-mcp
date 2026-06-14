@@ -24,7 +24,7 @@ export interface LiveGraphBuilderWebSocketLike {
 export type LiveGraphBuilderWebSocketFactory = (url: string) => LiveGraphBuilderWebSocketLike;
 
 const DEFAULT_RESTORE_AFTER_SECONDS = 5;
-const SUPPORT_NAME = "stereo_linear_chain";
+const SUPPORT_NAME = "linear_chain_v1";
 
 export class LiveGraphBuilderService {
   constructor(
@@ -41,7 +41,7 @@ export class LiveGraphBuilderService {
     plan: LiveGraphBuilderPlan;
   }): Promise<LiveGraphBuilderResult> {
     const restoreAfterSeconds = input.restoreAfterSeconds ?? DEFAULT_RESTORE_AFTER_SECONDS;
-    const supportedTopology: "stereo_linear_chain" = SUPPORT_NAME;
+    const supportedTopology: "linear_chain_v1" = SUPPORT_NAME;
 
     const planAnalysis = this.analyzePlan(input.plan);
     if (!planAnalysis.supported) {
@@ -66,10 +66,10 @@ export class LiveGraphBuilderService {
     const monitor = await LiveGraphWebsocketMonitor.open(this.websocketUrl, this.websocketFactory);
     const apiCalls: ApiCallRecord[] = [];
     const unexpectedBehavior: string[] = [];
-    const addCall = planAnalysis.addCall;
     const connectCalls = planAnalysis.connectCalls;
     const parameterCalls = planAnalysis.parameterCalls;
-    const plugin = planAnalysis.plugin;
+    const pluginPlans = planAnalysis.plugins;
+    const pluginInstances = pluginPlans.map((plugin) => plugin.instance);
 
     await monitor.waitFor((raw) => raw.startsWith("loading_end"), 1500).catch(() => null);
     const baseline = monitor.snapshot();
@@ -77,11 +77,11 @@ export class LiveGraphBuilderService {
     const baselineDisconnects = [...occupiedBaselineEdges].reverse();
 
     let baselineDisconnected = false;
-    let addSucceeded = false;
-    let connectSucceeded = false;
-    let parameterSucceeded = false;
+    let addsSucceeded = false;
+    let connectsSucceeded = false;
+    let parametersSucceeded = false;
     let tempDisconnectSucceeded = false;
-    let removeSucceeded = false;
+    let removesSucceeded = false;
     let restoreSucceeded = false;
     let afterDisconnects = baseline;
     let afterAdds = baseline;
@@ -129,15 +129,24 @@ export class LiveGraphBuilderService {
           ));
       afterDisconnects = monitor.captureState();
 
-      const addResponse = await this.writeApi.getBytes(addCall.path, addCall.purpose);
-      apiCalls.push(recordCall("GET", addCall.path, addCall.purpose, addResponse));
-      addSucceeded = addResponse.ok;
-      if (!addResponse.ok) {
-        unexpectedBehavior.push(`Add failed: ${addCall.path} -> HTTP ${addResponse.status}`);
-      } else {
+      addsSucceeded = true;
+      for (const plugin of pluginPlans) {
+        const addResponse = await this.writeApi.getBytes(
+          plugin.addCall.path,
+          plugin.addCall.purpose
+        );
+        apiCalls.push(recordCall("GET", plugin.addCall.path, plugin.addCall.purpose, addResponse));
+        if (!addResponse.ok) {
+          addsSucceeded = false;
+          unexpectedBehavior.push(
+            `Add failed: ${plugin.addCall.path} -> HTTP ${addResponse.status}`
+          );
+          continue;
+        }
         await monitor
           .waitFor((raw) => matchesInstanceEvent(raw, "add", plugin.instance), 5000)
           .catch(() => {
+            addsSucceeded = false;
             unexpectedBehavior.push(
               `Websocket did not report add for ${uiGraphInstancePath(plugin.instance)}.`
             );
@@ -145,29 +154,30 @@ export class LiveGraphBuilderService {
       }
       afterAdds = monitor.captureState();
 
+      connectsSucceeded = true;
       for (const call of connectCalls) {
         const response = await this.writeApi.getBytes(call.path, call.purpose);
         apiCalls.push(recordCall("GET", call.path, call.purpose, response));
         if (!response.ok) {
+          connectsSucceeded = false;
           unexpectedBehavior.push(`Connect failed: ${call.path} -> HTTP ${response.status}`);
         }
       }
-      connectSucceeded = true;
       for (const call of connectCalls) {
         await monitor
           .waitFor((raw) => matchesConnectionEventFromPath(raw, call.path), 5000)
           .catch(() => {
-            connectSucceeded = false;
+            connectsSucceeded = false;
             unexpectedBehavior.push(`Websocket did not report connect for ${call.path}.`);
           });
       }
       afterConnects = monitor.captureState();
 
-      parameterSucceeded = true;
+      parametersSucceeded = true;
       for (const call of parameterCalls) {
         const payload = parseParameterPayload(call);
         if (!payload) {
-          parameterSucceeded = false;
+          parametersSucceeded = false;
           unexpectedBehavior.push(`Parameter call was missing instance/symbol/value: ${call.path}`);
           continue;
         }
@@ -182,7 +192,7 @@ export class LiveGraphBuilderService {
         );
         apiCalls.push(recordCall("POST", call.path, call.purpose, response));
         if (!response.ok) {
-          parameterSucceeded = false;
+          parametersSucceeded = false;
           unexpectedBehavior.push(`Parameter set failed: ${call.path} -> HTTP ${response.status}`);
         }
       }
@@ -217,19 +227,23 @@ export class LiveGraphBuilderService {
           });
       }
 
-      const removePath = this.removePath(plugin.instance);
-      const removeResponse = await this.writeApi.getBytes(
-        removePath,
-        "rollback remove live plugin"
-      );
-      apiCalls.push(recordCall("GET", removePath, "rollback remove live plugin", removeResponse));
-      removeSucceeded = removeResponse.ok;
-      if (!removeResponse.ok) {
-        unexpectedBehavior.push(`Remove failed: ${removePath} -> HTTP ${removeResponse.status}`);
-      } else {
+      removesSucceeded = true;
+      for (const plugin of [...pluginPlans].reverse()) {
+        const removePath = this.removePath(plugin.instance);
+        const removeResponse = await this.writeApi.getBytes(
+          removePath,
+          "rollback remove live plugin"
+        );
+        apiCalls.push(recordCall("GET", removePath, "rollback remove live plugin", removeResponse));
+        if (!removeResponse.ok) {
+          removesSucceeded = false;
+          unexpectedBehavior.push(`Remove failed: ${removePath} -> HTTP ${removeResponse.status}`);
+          continue;
+        }
         await monitor
           .waitFor((raw) => matchesInstanceEvent(raw, "remove", plugin.instance), 5000)
           .catch(() => {
+            removesSucceeded = false;
             unexpectedBehavior.push(
               `Websocket did not report remove for ${uiGraphInstancePath(plugin.instance)}.`
             );
@@ -272,11 +286,11 @@ export class LiveGraphBuilderService {
       const success =
         unexpectedBehavior.length === 0 &&
         baselineDisconnected &&
-        addSucceeded &&
-        connectSucceeded &&
-        parameterSucceeded &&
+        addsSucceeded &&
+        connectsSucceeded &&
+        parametersSucceeded &&
         tempDisconnectSucceeded &&
-        removeSucceeded &&
+        removesSucceeded &&
         restoreSucceeded &&
         finalMatchesBaseline;
 
@@ -296,7 +310,8 @@ export class LiveGraphBuilderService {
           afterConnects,
           afterParameters,
           afterRollback,
-          plugin.instance
+          pluginInstances,
+          connectCalls
         ),
         apiCalls,
         success,
@@ -310,14 +325,14 @@ export class LiveGraphBuilderService {
       if (
         input.mode === "apply_temporary" &&
         !restoreSucceeded &&
-        (addSucceeded || baselineDisconnected || tempDisconnectSucceeded)
+        (addsSucceeded || baselineDisconnected || tempDisconnectSucceeded)
       ) {
         await bestEffortCleanup(
           this.writeApi,
           apiCalls,
           connectCalls,
           occupiedBaselineEdges,
-          plugin.instance
+          pluginInstances
         );
       }
       await monitor.close();
@@ -334,19 +349,19 @@ export class LiveGraphBuilderService {
     restoreAfterSeconds: number,
     analysis: {
       supported: true;
-      addCall: LiveGraphApiCall;
+      addCalls: LiveGraphApiCall[];
       connectCalls: LiveGraphApiCall[];
       parameterCalls: LiveGraphApiCall[];
     }
   ): LiveGraphBuilderResult {
     const apiCalls = [
-      {
+      ...analysis.addCalls.map((call) => ({
         method: "GET" as const,
-        path: analysis.addCall.path,
-        purpose: analysis.addCall.purpose,
+        path: call.path,
+        purpose: call.purpose,
         status: "success" as const,
         httpStatus: 200
-      },
+      })),
       ...analysis.connectCalls.map((call) => ({
         method: "GET" as const,
         path: call.path,
@@ -376,7 +391,8 @@ export class LiveGraphBuilderService {
       unexpectedBehavior: [],
       notes: [
         "Dry-run only; no device calls were made.",
-        "Planned add/connect/parameter calls use the UI-compatible /graph path format."
+        "Planned add/connect/parameter calls use the UI-compatible /graph path format.",
+        "The builder accepts linear chains with any mixture of mono and stereo plugins."
       ]
     };
   }
@@ -402,7 +418,7 @@ export class LiveGraphBuilderService {
       apiCalls: [],
       success: false,
       unexpectedBehavior: [reason],
-      notes: ["Live graph builder v1 only supports a single stereo plugin chain."]
+      notes: ["Live graph builder v1 only supports a linear chain of one or more plugins."]
     };
   }
 
@@ -434,52 +450,53 @@ export class LiveGraphBuilderService {
   private analyzePlan(plan: LiveGraphBuilderPlan):
     | {
         supported: true;
-        plugin: { name: string; uri: string; instance: string; x: number; y: number };
-        addCall: LiveGraphApiCall;
+        plugins: Array<{
+          name: string;
+          uri: string;
+          instance: string;
+          x: number;
+          y: number;
+          addCall: LiveGraphApiCall;
+        }>;
+        addCalls: LiveGraphApiCall[];
         connectCalls: LiveGraphApiCall[];
         parameterCalls: LiveGraphApiCall[];
       }
     | { supported: false; reason: string } {
-    if (plan.plugins.length !== 1) {
+    if (plan.plugins.length === 0) {
       return {
         supported: false,
-        reason: "LiveGraphBuilderService v1 supports exactly one plugin."
+        reason: "LiveGraphBuilderService v1 supports at least one plugin."
       };
     }
-    const plugin = plan.plugins[0];
-    const addCall = plugin.addCall;
-    if (!addCall.path.startsWith("/effect/add//graph/")) {
-      return {
-        supported: false,
-        reason: `Add call must use UI-compatible /graph path format: ${addCall.path}`
-      };
+    const plugins = plan.plugins.map((plugin) => ({ ...plugin }));
+    const addCalls = plugins.map((plugin) => plugin.addCall);
+    for (const plugin of plugins) {
+      if (!plugin.addCall.path.startsWith("/effect/add//graph/")) {
+        return {
+          supported: false,
+          reason: `Add call must use UI-compatible /graph path format: ${plugin.addCall.path}`
+        };
+      }
     }
 
-    const connectCalls = plan.apiCalls.filter((call) => call.path.startsWith("/effect/connect/"));
-    const expectedConnectPaths = [
-      `/effect/connect//graph/capture_1,${uiGraphRef(`${plugin.instance}/inL`)}`,
-      `/effect/connect//graph/capture_2,${uiGraphRef(`${plugin.instance}/inR`)}`,
-      `/effect/connect/${uiGraphRef(`${plugin.instance}/outL`)},/graph/playback_1`,
-      `/effect/connect/${uiGraphRef(`${plugin.instance}/outR`)},/graph/playback_2`
-    ];
-    if (connectCalls.length !== expectedConnectPaths.length) {
+    const connectCalls = plan.apiCalls
+      .filter((call) => call.path.startsWith("/effect/connect/"))
+      .map((call) => ({
+        ...call,
+        path: normalizeConnectPath(call.path)
+      }));
+    if (connectCalls.length === 0) {
       return {
         supported: false,
-        reason: `LiveGraphBuilderService v1 expects exactly 4 connect calls for stereo output; got ${connectCalls.length}.`
-      };
-    }
-    const actualConnectPaths = connectCalls.map((call) => call.path);
-    if (!arraysEqual(actualConnectPaths, expectedConnectPaths)) {
-      return {
-        supported: false,
-        reason: "LiveGraphBuilderService v1 only supports the stereo linear chain topology."
+        reason: "LiveGraphBuilderService v1 requires at least one connection call."
       };
     }
     const parameterCalls = plan.apiCalls.filter((call) => call.path === "/effect/parameter/set/");
     return {
       supported: true,
-      plugin,
-      addCall,
+      plugins,
+      addCalls,
       connectCalls,
       parameterCalls
     };
@@ -538,6 +555,12 @@ function parseConnectPath(connectPath: string): { source: string; target: string
   return { source, target };
 }
 
+function normalizeConnectPath(connectPath: string): string {
+  const parsed = parseConnectPath(connectPath);
+  if (!parsed) return connectPath;
+  return `/effect/connect/${uiGraphRef(parsed.source)},${uiGraphRef(parsed.target)}`;
+}
+
 function parseParameterPayload(call: {
   body: unknown;
 }): { instance: string; symbol: string; value: number } | null {
@@ -582,16 +605,39 @@ function buildWebsocketState(
   afterConnects: LiveGraphConnectionExperimentGraphStateLike,
   afterParameters: LiveGraphConnectionExperimentGraphStateLike,
   afterRollback: LiveGraphConnectionExperimentGraphStateLike,
-  instance: string
+  instances: string[],
+  connectCalls: LiveGraphApiCall[]
 ): LiveGraphBuilderWebsocketState {
   const final = afterRollback;
   return {
     url,
     rawMessages,
-    addObserved: rawMessages.some((raw) => matchesInstanceEvent(raw, "add", instance)),
-    connectObserved: rawMessages.some((raw) => raw.startsWith("connect ")),
-    disconnectObserved: rawMessages.some((raw) => raw.startsWith("disconnect ")),
-    removeObserved: rawMessages.some((raw) => matchesInstanceEvent(raw, "remove", instance)),
+    addObserved:
+      instances.length > 0 &&
+      instances.every((instance) =>
+        rawMessages.some((raw) => matchesInstanceEvent(raw, "add", instance))
+      ),
+    connectObserved:
+      connectCalls.length > 0 &&
+      connectCalls.every((call) =>
+        rawMessages.some((raw) => matchesConnectionEventFromPath(raw, call.path))
+      ),
+    disconnectObserved:
+      connectCalls.length > 0 &&
+      connectCalls.every((call) => {
+        const parsed = parseConnectPath(call.path);
+        return (
+          !!parsed &&
+          rawMessages.some((raw) =>
+            matchesConnectionEvent(raw, "disconnect", parsed.source, parsed.target)
+          )
+        );
+      }),
+    removeObserved:
+      instances.length > 0 &&
+      instances.every((instance) =>
+        rawMessages.some((raw) => matchesInstanceEvent(raw, "remove", instance))
+      ),
     baseline,
     afterDisconnects,
     afterAdds,
@@ -697,7 +743,7 @@ async function bestEffortCleanup(
   apiCalls: ApiCallRecord[],
   connectCalls: Array<LiveGraphApiCall>,
   occupiedBaselineEdges: Array<{ source: string; target: string }>,
-  instance: string
+  instances: string[]
 ): Promise<void> {
   for (const call of [...connectCalls].reverse()) {
     const parsed = parseConnectPath(call.path);
@@ -711,21 +757,14 @@ async function bestEffortCleanup(
       // best effort only
     }
   }
-  try {
-    const response = await writeApi.getBytes(
-      `/effect/remove/${uiGraphInstancePath(instance)}`,
-      "best-effort rollback remove"
-    );
-    apiCalls.push(
-      recordCall(
-        "GET",
-        `/effect/remove/${uiGraphInstancePath(instance)}`,
-        "best-effort rollback remove",
-        response
-      )
-    );
-  } catch {
-    // best effort only
+  for (const instance of [...instances].reverse()) {
+    try {
+      const path = `/effect/remove/${uiGraphInstancePath(instance)}`;
+      const response = await writeApi.getBytes(path, "best-effort rollback remove");
+      apiCalls.push(recordCall("GET", path, "best-effort rollback remove", response));
+    } catch {
+      // best effort only
+    }
   }
   for (const edge of occupiedBaselineEdges) {
     try {

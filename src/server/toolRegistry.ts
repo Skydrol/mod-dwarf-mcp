@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
+import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
 import { runLiveGraphExperimentTool } from "../tools/runLiveGraphExperiment.js";
@@ -195,6 +196,22 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => runLiveGraphBuilderDryRunOrApplyTool(input, context)
+  );
+
+  server.registerTool(
+    "run_live_graph_builder_from_prompt",
+    {
+      title: "Dry-run or temporarily apply a live graph plan from a prompt",
+      description:
+        "Build a prompt-derived pedalboard plan using real plugin metadata, then apply it as a temporary live MOD UI chain with websocket validation and automatic rollback. Never saves or calls /banks/save.",
+      inputSchema: {
+        mode: z.enum(["dry_run", "apply_temporary"]),
+        confirm: z.boolean(),
+        restoreAfterSeconds: z.number().int().positive().optional(),
+        plan: pedalboardPlanSchema
+      }
+    },
+    async (input) => runLiveGraphBuilderFromPromptTool(input, context)
   );
 
   server.registerTool(

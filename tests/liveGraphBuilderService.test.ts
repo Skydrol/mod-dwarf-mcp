@@ -59,12 +59,13 @@ describe("LiveGraphBuilderService", () => {
     expect(result.dryRun).toBe(true);
     expect(result.success).toBe(true);
     expect(result.apiCalls.map((call) => call.path)).toEqual([
-      "/effect/add//graph/stereo_api_probe?x=713.569580078125&y=266.78993225097656&uri=http%3A//gareus.org/oss/lv2/tinygain%23stereo",
-      "/effect/connect//graph/capture_1,/graph/stereo_api_probe/inL",
-      "/effect/connect//graph/capture_2,/graph/stereo_api_probe/inR",
-      "/effect/connect//graph/stereo_api_probe/outL,/graph/playback_1",
-      "/effect/connect//graph/stereo_api_probe/outR,/graph/playback_2",
-      "/effect/parameter/set/"
+      "/effect/add//graph/tinygain_mono_probe?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+      "/effect/add//graph/bollie_delay_probe?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+      "/effect/connect//graph/capture_1,/graph/tinygain_mono_probe/in",
+      "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+      "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+      "/effect/connect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+      "/effect/connect//graph/bollie_delay_probe/out_r,/graph/playback_2"
     ]);
   });
 
@@ -124,17 +125,20 @@ describe("LiveGraphBuilderService", () => {
       "/effect/disconnect//graph/stereo/outL,/graph/playback_1",
       "/effect/disconnect//graph/capture_2,/graph/stereo/inR",
       "/effect/disconnect//graph/capture_1,/graph/stereo/inL",
-      "/effect/add//graph/stereo_api_probe?x=713.569580078125&y=266.78993225097656&uri=http%3A//gareus.org/oss/lv2/tinygain%23stereo",
-      "/effect/connect//graph/capture_1,/graph/stereo_api_probe/inL",
-      "/effect/connect//graph/capture_2,/graph/stereo_api_probe/inR",
-      "/effect/connect//graph/stereo_api_probe/outL,/graph/playback_1",
-      "/effect/connect//graph/stereo_api_probe/outR,/graph/playback_2",
-      "/effect/parameter/set/",
-      "/effect/disconnect//graph/stereo_api_probe/outR,/graph/playback_2",
-      "/effect/disconnect//graph/stereo_api_probe/outL,/graph/playback_1",
-      "/effect/disconnect//graph/capture_2,/graph/stereo_api_probe/inR",
-      "/effect/disconnect//graph/capture_1,/graph/stereo_api_probe/inL",
-      "/effect/remove//graph/stereo_api_probe",
+      "/effect/add//graph/tinygain_mono_probe?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+      "/effect/add//graph/bollie_delay_probe?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+      "/effect/connect//graph/capture_1,/graph/tinygain_mono_probe/in",
+      "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+      "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+      "/effect/connect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+      "/effect/connect//graph/bollie_delay_probe/out_r,/graph/playback_2",
+      "/effect/disconnect//graph/bollie_delay_probe/out_r,/graph/playback_2",
+      "/effect/disconnect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+      "/effect/disconnect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+      "/effect/disconnect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+      "/effect/disconnect//graph/capture_1,/graph/tinygain_mono_probe/in",
+      "/effect/remove//graph/bollie_delay_probe",
+      "/effect/remove//graph/tinygain_mono_probe",
       "/effect/connect//graph/capture_1,/graph/stereo/inL",
       "/effect/connect//graph/capture_2,/graph/stereo/inR",
       "/effect/connect//graph/stereo/outL,/graph/playback_1",
@@ -149,78 +153,79 @@ function makePlan(): LiveGraphAuthoringPlan {
     title: "Stereo Probe",
     plugins: [
       {
-        role: "stereo gain",
-        name: "TinyGain Stereo",
-        uri: "http://gareus.org/oss/lv2/tinygain#stereo",
-        instance: "stereo_api_probe",
-        x: 713.569580078125,
-        y: 266.78993225097656,
+        role: "input gain",
+        name: "TinyGain Mono",
+        uri: "http://gareus.org/oss/lv2/tinygain#mono",
+        instance: "tinygain_mono_probe",
+        x: 120,
+        y: 120,
         addCall: {
           method: "GET",
-          path: "/effect/add//graph/stereo_api_probe?x=713.569580078125&y=266.78993225097656&uri=http%3A//gareus.org/oss/lv2/tinygain%23stereo",
-          purpose: "add plugin instance stereo_api_probe",
+          path: "/effect/add//graph/tinygain_mono_probe?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+          purpose: "add plugin instance tinygain_mono_probe",
           body: { kind: "none" }
         },
-        parameterPlans: [
-          {
-            requestedKey: "gain",
-            symbol: "gain",
-            requestedRange: { min: -20, max: 20, unit: "dB" },
-            resolvedRange: { min: -20, max: 20, unit: "dB" },
-            value: 0.75
-          }
-        ],
+        parameterPlans: [],
+        connectCalls: []
+      },
+      {
+        role: "delay",
+        name: "Bollie Delay",
+        uri: "https://ca9.eu/lv2/bolliedelay",
+        instance: "bollie_delay_probe",
+        x: 360,
+        y: 140,
+        addCall: {
+          method: "GET",
+          path: "/effect/add//graph/bollie_delay_probe?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+          purpose: "add plugin instance bollie_delay_probe",
+          body: { kind: "none" }
+        },
+        parameterPlans: [],
         connectCalls: []
       }
     ],
     apiCalls: [
       {
         method: "GET",
-        path: "/effect/add//graph/stereo_api_probe?x=713.569580078125&y=266.78993225097656&uri=http%3A//gareus.org/oss/lv2/tinygain%23stereo",
-        purpose: "add plugin instance stereo_api_probe",
+        path: "/effect/add//graph/tinygain_mono_probe?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+        purpose: "add plugin instance tinygain_mono_probe",
         body: { kind: "none" }
       },
       {
         method: "GET",
-        path: "/effect/connect//graph/capture_1,/graph/stereo_api_probe/inL",
-        purpose: "connect capture_1 to stereo_api_probe/inL",
+        path: "/effect/add//graph/bollie_delay_probe?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+        purpose: "add plugin instance bollie_delay_probe",
         body: { kind: "none" }
       },
       {
         method: "GET",
-        path: "/effect/connect//graph/capture_2,/graph/stereo_api_probe/inR",
-        purpose: "connect capture_2 to stereo_api_probe/inR",
+        path: "/effect/connect//graph/capture_1,/graph/tinygain_mono_probe/in",
+        purpose: "connect capture_1 to tinygain_mono_probe/in",
         body: { kind: "none" }
       },
       {
         method: "GET",
-        path: "/effect/connect//graph/stereo_api_probe/outL,/graph/playback_1",
-        purpose: "connect stereo_api_probe/outL to playback_1",
+        path: "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+        purpose: "connect tinygain_mono_probe/out to bollie_delay_probe/in_l",
         body: { kind: "none" }
       },
       {
         method: "GET",
-        path: "/effect/connect//graph/stereo_api_probe/outR,/graph/playback_2",
-        purpose: "connect stereo_api_probe/outR to playback_2",
+        path: "/effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+        purpose: "connect tinygain_mono_probe/out to bollie_delay_probe/in_r",
         body: { kind: "none" }
       },
       {
-        method: "POST",
-        path: "/effect/parameter/set/",
-        purpose: "set stereo_api_probe/gain to 0.75",
-        body: {
-          kind: "json",
-          value: {
-            instance: "/graph/stereo_api_probe",
-            symbol: "gain",
-            value: 0.75
-          }
-        }
+        method: "GET",
+        path: "/effect/connect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+        purpose: "connect bollie_delay_probe/out_l to playback_1",
+        body: { kind: "none" }
       },
       {
-        method: "POST",
-        path: "/pedalboard/save",
-        purpose: "save current live graph as a new pedalboard",
+        method: "GET",
+        path: "/effect/connect//graph/bollie_delay_probe/out_r,/graph/playback_2",
+        purpose: "connect bollie_delay_probe/out_r to playback_2",
         body: { kind: "none" }
       }
     ],
@@ -231,12 +236,12 @@ function makePlan(): LiveGraphAuthoringPlan {
       errors: [],
       pluginUris: {
         valid: true,
-        checked: ["http://gareus.org/oss/lv2/tinygain#stereo"],
+        checked: ["http://gareus.org/oss/lv2/tinygain#mono", "https://ca9.eu/lv2/bolliedelay"],
         missing: []
       },
       ports: { valid: true, errors: [] },
-      connections: { valid: true, errors: [], callCount: 4 },
-      parameters: { valid: true, errors: [], callCount: 1 },
+      connections: { valid: true, errors: [], callCount: 5 },
+      parameters: { valid: true, errors: [], callCount: 0 },
       snapshotSave: { included: false, valid: true, note: "" },
       pedalboardSave: { valid: true, title: "Stereo Probe" }
     }
@@ -305,6 +310,24 @@ function emitForPath(socket: MockBuilderSocket, path: string): void {
     socket.emit(
       "add /graph/stereo_api_probe http://gareus.org/oss/lv2/tinygain#stereo 713.6 266.8 false 0 0"
     );
+    return;
+  }
+  if (path.startsWith("/effect/add//graph/tinygain_mono_probe")) {
+    socket.emit(
+      "add /graph/tinygain_mono_probe http://gareus.org/oss/lv2/tinygain#mono 120 120 false 0 0"
+    );
+    return;
+  }
+  if (path.startsWith("/effect/add//graph/bollie_delay_probe")) {
+    socket.emit("add /graph/bollie_delay_probe https://ca9.eu/lv2/bolliedelay 360 140 false 0 0");
+    return;
+  }
+  if (path === "/effect/remove//graph/tinygain_mono_probe") {
+    socket.emit("remove /graph/tinygain_mono_probe");
+    return;
+  }
+  if (path === "/effect/remove//graph/bollie_delay_probe") {
+    socket.emit("remove /graph/bollie_delay_probe");
     return;
   }
   if (path === "/effect/remove//graph/stereo_api_probe") {

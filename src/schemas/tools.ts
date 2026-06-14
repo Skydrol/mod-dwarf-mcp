@@ -292,3 +292,16 @@ export const runLiveGraphBuilderInputSchema = z
   .strict();
 
 export type RunLiveGraphBuilderInput = z.infer<typeof runLiveGraphBuilderInputSchema>;
+
+export const runLiveGraphBuilderFromPromptInputSchema = z
+  .object({
+    mode: z.enum(["dry_run", "apply_temporary"]),
+    confirm: z.boolean(),
+    restoreAfterSeconds: z.number().int().positive().optional(),
+    plan: pedalboardPlanSchema
+  })
+  .strict();
+
+export type RunLiveGraphBuilderFromPromptInput = z.infer<
+  typeof runLiveGraphBuilderFromPromptInputSchema
+>;

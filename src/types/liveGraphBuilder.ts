@@ -35,7 +35,7 @@ export interface LiveGraphBuilderResult {
   mode: "dry_run" | "apply_temporary";
   confirmed: boolean;
   restoreAfterSeconds: number;
-  supportedTopology: "stereo_linear_chain";
+  supportedTopology: "linear_chain_v1";
   plan: LiveGraphBuilderPlan;
   websocket: LiveGraphBuilderWebsocketState;
   apiCalls: ApiCallRecord[];
