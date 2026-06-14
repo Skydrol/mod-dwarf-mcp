@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { pluginCatalog } from "../src/data/pluginCatalog.js";
 import { DryBundleService } from "../src/services/dryBundleService.js";
 import { PedalboardPlannerService } from "../src/services/pedalboardPlannerService.js";
 import { PedalboardService } from "../src/services/pedalboardService.js";
@@ -111,5 +112,39 @@ describe("DryBundleService", () => {
     ]);
     expect(bundle.validation.pluginUris.valid).toBe(true);
     expect(bundle.validation.dryRun.uploadedToDevice).toBe(false);
+  });
+
+  it("keeps snapshot output gain controlled for a Let It Happen style board", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+    const service = new DryBundleService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "psychedelic pop",
+      instrument: "guitar",
+      goals: ["Let It Happen", "huge stereo movement", "psychedelic chorus", "wide reverb"],
+      referenceArtists: ["Tame Impala"]
+    });
+
+    const bundle = await service.createDryBundle(plan);
+    const snapshots = JSON.parse(await readFile(bundle.generatedFiles.snapshots, "utf8")) as {
+      snapshots: Array<{
+        data: Record<string, { ports: Record<string, number> }>;
+      }>;
+    };
+    const outputPlugin = bundle.sourcePlan.signalChain.at(-1);
+
+    expect(outputPlugin?.role).toBe("output level");
+    expect(outputPlugin?.suggestedInstance).toBeDefined();
+
+    const values = snapshots.snapshots.map((snapshot) => {
+      const ports = snapshot.data[outputPlugin!.suggestedInstance].ports;
+      return Object.values(ports).find((value): value is number => typeof value === "number") ?? 0;
+    });
+
+    expect(Math.max(...values)).toBeLessThanOrEqual(0);
+    for (let index = 1; index < values.length; index += 1) {
+      expect(Math.abs(values[index] - values[index - 1])).toBeLessThanOrEqual(3);
+    }
   });
 });

@@ -11,6 +11,7 @@ import {
   extractMainTtlFromManifest,
   extractPluginsUsed
 } from "./parsers.js";
+import { PedalboardSafetyService } from "./pedalboardSafetyService.js";
 import type { PluginService } from "./pluginService.js";
 
 interface ResolvedPlugin {
@@ -56,15 +57,20 @@ const snapshotsFileSchema = z
   });
 
 export class DryBundleService {
-  constructor(private readonly pluginService: PluginService) {}
+  constructor(
+    private readonly pluginService: PluginService,
+    private readonly safetyService: PedalboardSafetyService = new PedalboardSafetyService()
+  ) {}
 
   async createDryBundle(plan: PedalboardPlan): Promise<DryPedalboardBundle> {
     const availableUris = await this.installedPluginUris();
-    const resolvedPlugins = await this.resolvePlugins(plan.signalChain);
+    const safety = this.safetyService.adjustPlan(plan);
+    const safePlan = safety.adjustedPlan;
+    const resolvedPlugins = await this.resolvePlugins(safePlan.signalChain);
 
-    this.checkSafety(plan, resolvedPlugins);
+    this.checkSafety(safePlan, resolvedPlugins);
 
-    const title = this.titleFromPlan(plan);
+    const title = this.titleFromPlan(safePlan);
     const mainFileName = `${slug(title)}.ttl`;
     const root = await mkdtemp(join(tmpdir(), "mod-dwarf-mcp-"));
     const bundlePath = join(root, `${slug(title)}.pedalboard`);
@@ -72,7 +78,7 @@ export class DryBundleService {
 
     const manifest = this.renderManifest(mainFileName);
     const mainTtl = this.renderMainTtl(title, resolvedPlugins);
-    const snapshots = this.renderSnapshots(resolvedPlugins, plan.snapshots);
+    const snapshots = this.renderSnapshots(resolvedPlugins, safePlan.snapshots);
     const addressings = this.renderAddressings(resolvedPlugins);
 
     const generatedFiles = {
@@ -91,12 +97,12 @@ export class DryBundleService {
 
     return {
       dryRun: true,
-      sourcePlan: plan,
+      sourcePlan: safePlan,
       directoryPath: root,
       bundlePath,
       generatedFiles,
       validation: this.validate({
-        plan,
+        plan: safePlan,
         resolvedPlugins,
         availableUris,
         manifest,
@@ -367,7 +373,7 @@ export class DryBundleService {
               preset: "",
               bypassed: false,
               parameters: {},
-              ports: this.snapshotPorts(plugin, snapshotIndex)
+              ports: this.snapshotPorts(plugin, snapshotIndex, safeSnapshots.length)
             }
           ])
         )
@@ -375,15 +381,16 @@ export class DryBundleService {
     };
   }
 
-  private snapshotPorts(plugin: ResolvedPlugin, snapshotIndex: number): Record<string, number> {
+  private snapshotPorts(
+    plugin: ResolvedPlugin,
+    snapshotIndex: number,
+    snapshotCount: number
+  ): Record<string, number> {
     return Object.fromEntries(
       plugin.controlRanges.map((port) => {
-        const base = midpoint(port.range.min, port.range.max);
-        const spread = (port.range.max - port.range.min) * 0.18;
-        const adjusted =
-          snapshotIndex === 0
-            ? base
-            : Math.min(port.range.max, Math.max(port.range.min, base + spread * snapshotIndex));
+        const adjusted = isGainLikeSnapshotPort(plugin.plan, port.symbol, port.range)
+          ? safeGainSnapshotValue(port.range, snapshotIndex, snapshotCount)
+          : genericSnapshotValue(port.range, snapshotIndex);
         return [port.symbol, Number(adjusted.toFixed(4))];
       })
     );
@@ -408,10 +415,11 @@ export class DryBundleService {
     return Object.fromEntries(entries.map((entry, index) => [`/hmi/knob${index + 1}`, [entry]]));
   }
 
-  private checkSafety(plan: PedalboardPlan, resolvedPlugins: ResolvedPlugin[]): void {
+  private checkSafety(_plan: PedalboardPlan, resolvedPlugins: ResolvedPlugin[]): void {
     const errors: string[] = [];
 
     for (const resolved of resolvedPlugins) {
+      const used = new Set<string>();
       if (resolved.ports.ports.length === 0) {
         errors.push(`Metadata missing for plugin: ${resolved.plan.uri || resolved.plan.name}`);
       }
@@ -424,10 +432,20 @@ export class DryBundleService {
       }
 
       for (const requestedKey of Object.keys(resolved.plan.parameterRanges)) {
-        const port = resolved.controlRanges.find((cr) => cr.requestedKey === requestedKey);
+        const planRange = resolved.plan.parameterRanges[requestedKey];
+        const port = findControlPort(requestedKey, resolved.ports.controlInputs, used);
         if (!port) {
           errors.push(
             `Parameter '${requestedKey}' not found on plugin: ${resolved.plan.uri || resolved.plan.name}`
+          );
+          continue;
+        }
+
+        used.add(port.symbol);
+        const range = resolveRequestedRange(requestedKey, planRange, port);
+        if (!range) {
+          errors.push(
+            `Parameter '${requestedKey}' on plugin ${resolved.plan.uri || resolved.plan.name} has no overlap between requested and device ranges`
           );
         }
       }
@@ -544,18 +562,39 @@ function resolveControlRanges(
 ): ResolvedPlugin["controlRanges"] {
   const used = new Set<string>();
   return Object.entries(plugin.parameterRanges).flatMap(([requestedKey, planRange]) => {
-    const port = findControlPort(requestedKey, ports.controlInputs, used);
-    if (!port) return [];
-    used.add(port.symbol);
-
-    const range = {
-      min: port.minimum ?? planRange.min,
-      max: port.maximum ?? planRange.max,
-      unit: port.unit ?? planRange.unit
-    };
-
-    return [{ requestedKey, symbol: port.symbol, range }];
+    const result = resolveRequestedControlRange(requestedKey, planRange, ports.controlInputs, used);
+    if (!result) return [];
+    used.add(result.port.symbol);
+    return [{ requestedKey, symbol: result.port.symbol, range: result.range }];
   });
+}
+
+function resolveRequestedControlRange(
+  requestedKey: string,
+  requestedRange: { min: number; max: number; unit?: string },
+  ports: PluginPort[],
+  used: Set<string>
+): { port: PluginPort; range: { min: number; max: number; unit?: string } } | null {
+  const port = findControlPort(requestedKey, ports, used);
+  if (!port) return null;
+  const range = resolveRequestedRange(requestedKey, requestedRange, port);
+  if (!range) return null;
+  return { port, range };
+}
+
+function resolveRequestedRange(
+  _requestedKey: string,
+  requestedRange: { min: number; max: number; unit?: string },
+  port: PluginPort
+): { min: number; max: number; unit?: string } | null {
+  const min = Math.max(requestedRange.min, port.minimum ?? requestedRange.min);
+  const max = Math.min(requestedRange.max, port.maximum ?? requestedRange.max);
+  if (min > max) return null;
+  return {
+    min,
+    max,
+    unit: port.unit ?? requestedRange.unit
+  };
 }
 
 function findControlPort(key: string, ports: PluginPort[], used: Set<string>): PluginPort | null {
@@ -610,8 +649,69 @@ function normalizePortKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function matchesAny(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(normalize(needle)));
+}
+
 function midpoint(min: number, max: number): number {
   return min + (max - min) / 2;
+}
+
+function genericSnapshotValue(
+  range: { min: number; max: number },
+  snapshotIndex: number
+): number {
+  const base = midpoint(range.min, range.max);
+  const spread = (range.max - range.min) * 0.18;
+  return snapshotIndex === 0
+    ? base
+    : Math.min(range.max, Math.max(range.min, base + spread * snapshotIndex));
+}
+
+function outputSnapshotValue(
+  range: { min: number; max: number },
+  snapshotIndex: number,
+  snapshotCount: number
+): number {
+  const floor = Math.max(range.min, -6);
+  const ceiling = Math.min(range.max, 0);
+  const safeCeiling = Math.min(ceiling, -3);
+
+  if (floor <= safeCeiling) {
+    if (snapshotCount <= 1) {
+      return midpoint(floor, safeCeiling);
+    }
+    const t = snapshotIndex / Math.max(1, snapshotCount - 1);
+    return floor + (safeCeiling - floor) * t;
+  }
+
+  return midpoint(range.min, range.max);
+}
+
+function isGainLikeSnapshotPort(
+  plugin: PlannedPlugin,
+  symbol: string,
+  range: { min: number; max: number }
+): boolean {
+  const normalized = normalize(`${plugin.role} ${plugin.name} ${symbol}`);
+  return isGainLike(normalized, range);
+}
+
+function safeGainSnapshotValue(
+  range: { min: number; max: number },
+  snapshotIndex: number,
+  snapshotCount: number
+): number {
+  return outputSnapshotValue(range, snapshotIndex, snapshotCount);
+}
+
+function isGainLike(normalized: string, range: { min: number; max: number }): boolean {
+  const rangeLooksLikeDb = range.min < 0 || range.max <= 0;
+  return rangeLooksLikeDb && matchesAny(normalized, ["gain", "level", "volume", "master", "output", "trim"]);
 }
 
 function formatNumber(value: number): string {

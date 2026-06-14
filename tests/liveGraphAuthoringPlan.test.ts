@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { PluginCatalogEntry } from "../src/data/pluginCatalog.js";
 import { LiveGraphAuthoringPlanService } from "../src/services/liveGraphAuthoringPlan.js";
 import { PedalboardPlannerService } from "../src/services/pedalboardPlannerService.js";
 import { PluginService } from "../src/services/pluginService.js";
@@ -56,6 +57,93 @@ function manualPlan(overrides: Partial<PedalboardPlan> = {}): PedalboardPlan {
     notes: [],
     unsupportedIdeas: [],
     ...overrides
+  };
+}
+
+function audioIn(index: number, symbol: string, name: string): PluginCatalogEntry["ports"][number] {
+  return {
+    index,
+    symbol,
+    name,
+    types: ["http://lv2plug.in/ns/lv2core#AudioPort", "http://lv2plug.in/ns/lv2core#InputPort"],
+    kind: "audio",
+    direction: "input",
+    properties: []
+  };
+}
+
+function audioOut(index: number, symbol: string, name: string): PluginCatalogEntry["ports"][number] {
+  return {
+    index,
+    symbol,
+    name,
+    types: ["http://lv2plug.in/ns/lv2core#AudioPort", "http://lv2plug.in/ns/lv2core#OutputPort"],
+    kind: "audio",
+    direction: "output",
+    properties: []
+  };
+}
+
+function control(
+  index: number,
+  symbol: string,
+  name: string,
+  minimum: number,
+  maximum: number,
+  unit?: string
+): PluginCatalogEntry["ports"][number] {
+  return {
+    index,
+    symbol,
+    name,
+    types: ["http://lv2plug.in/ns/lv2core#ControlPort", "http://lv2plug.in/ns/lv2core#InputPort"],
+    kind: "control",
+    direction: "input",
+    minimum,
+    maximum,
+    default: minimum + (maximum - minimum) / 2,
+    unit,
+    properties: []
+  };
+}
+
+function bollieDelayEntry(): PluginCatalogEntry {
+  return {
+    uri: "https://ca9.eu/lv2/bolliedelay",
+    name: "Bollie Delay",
+    ports: [
+      audioIn(0, "InputL", "Input L"),
+      audioIn(1, "InputR", "Input R"),
+      audioOut(2, "OutputL", "Output L"),
+      audioOut(3, "OutputR", "Output R"),
+      control(4, "feedback", "Feedback", 0, 100, "%"),
+      control(5, "mix", "Mix", 0, 100, "%")
+    ]
+  };
+}
+
+function neuralAmpModelerEntry(): PluginCatalogEntry {
+  return {
+    uri: "urn:example:neural-amp-modeler",
+    name: "Neural Amp Modeler",
+    ports: [
+      audioIn(0, "IN", "IN"),
+      audioOut(1, "OUT", "OUT"),
+      control(2, "PREGAIN", "PREGAIN", -12, 12, "dB")
+    ]
+  };
+}
+
+function zamCompEntry(): PluginCatalogEntry {
+  return {
+    uri: "urn:example:zamcomp",
+    name: "ZamComp",
+    ports: [
+      audioIn(0, "in", "In"),
+      audioOut(1, "out", "Out"),
+      control(2, "attack", "Attack", 0.001, 0.2, "s"),
+      control(3, "release", "Release", 0.01, 1.0, "s")
+    ]
   };
 }
 
@@ -149,6 +237,96 @@ describe("LiveGraphAuthoringPlanService", () => {
     expect(plan.validation.valid).toBe(false);
     expect(plan.validation.parameters.errors[0]).toContain("NotAPort");
     expect(plan.apiCalls).toEqual([]);
+  });
+
+  it("rejects unsupported Bollie Delay time mapping", async () => {
+    const pluginService = new PluginService(null, [bollieDelayEntry()]);
+    const service = new LiveGraphAuthoringPlanService(pluginService);
+
+    const invalid = manualPlan({
+      signalChain: [
+        {
+          role: "delay",
+          name: "Bollie Delay",
+          uri: "https://ca9.eu/lv2/bolliedelay",
+          reason: "Rhythmic delay",
+          suggestedInstance: "delay_1",
+          parameterRanges: {
+            time: { min: 250, max: 650, unit: "ms" }
+          }
+        }
+      ]
+    });
+
+    const plan = await service.buildPlan(invalid);
+
+    expect(plan.validation.valid).toBe(false);
+    expect(plan.validation.parameters.errors.join("\n")).toContain("time");
+    expect(plan.apiCalls).toEqual([]);
+  });
+
+  it("does not guess missing Neural Amp Modeler tone controls", async () => {
+    const pluginService = new PluginService(null, [neuralAmpModelerEntry()]);
+    const service = new LiveGraphAuthoringPlanService(pluginService);
+
+    const invalid = manualPlan({
+      signalChain: [
+        {
+          role: "high gain drive",
+          name: "Neural Amp Modeler",
+          uri: "urn:example:neural-amp-modeler",
+          reason: "Amp model",
+          suggestedInstance: "nam_1",
+          parameterRanges: {
+            PREGAIN: { min: -12, max: 12, unit: "dB" },
+            MASTER: { min: -6, max: 3, unit: "dB" },
+            BASS: { min: -8, max: 8, unit: "dB" },
+            MID: { min: -8, max: 8, unit: "dB" },
+            TREBLE: { min: -8, max: 8, unit: "dB" }
+          }
+        }
+      ]
+    });
+
+    const plan = await service.buildPlan(invalid);
+
+    expect(plan.validation.valid).toBe(false);
+    expect(plan.validation.parameters.errors.join("\n")).toContain("MASTER");
+    expect(plan.validation.parameters.errors.join("\n")).toContain("BASS");
+    expect(plan.validation.parameters.errors.join("\n")).toContain("MID");
+    expect(plan.validation.parameters.errors.join("\n")).toContain("TREBLE");
+    expect(plan.apiCalls).toEqual([]);
+  });
+
+  it("keeps ZamComp attack and release inside real device ranges", async () => {
+    const pluginService = new PluginService(null, [zamCompEntry()]);
+    const service = new LiveGraphAuthoringPlanService(pluginService);
+
+    const valid = manualPlan({
+      signalChain: [
+        {
+          role: "dynamics",
+          name: "ZamComp",
+          uri: "urn:example:zamcomp",
+          reason: "Compression",
+          suggestedInstance: "zamcomp_1",
+          parameterRanges: {
+            attack: { min: 0.001, max: 0.03, unit: "s" },
+            release: { min: 0.05, max: 0.4, unit: "s" }
+          }
+        }
+      ]
+    });
+
+    const plan = await service.buildPlan(valid);
+
+    expect(plan.validation.valid).toBe(true);
+    const plugin = plan.plugins[0];
+    expect(plugin.parameterPlans).toHaveLength(2);
+    for (const parameter of plugin.parameterPlans) {
+      expect(parameter.value).toBeGreaterThanOrEqual(parameter.minimum);
+      expect(parameter.value).toBeLessThanOrEqual(parameter.maximum);
+    }
   });
 
   it("matches the planner's installed-plugin output", async () => {

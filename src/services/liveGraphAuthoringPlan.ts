@@ -40,8 +40,8 @@ export class LiveGraphAuthoringPlanService {
       note:
         plan.snapshots.length > 0
           ? plan.snapshots.length === 1
-            ? `Will save the current snapshot using '${plan.snapshots[0].name}'.`
-            : "Only the current snapshot can be saved with /snapshot/save; additional planned snapshots are not expressible with the allowed API set."
+            ? `If confirmed later, the current snapshot can be saved using '${plan.snapshots[0].name}'.`
+            : "Multiple snapshots were planned, but the current live MOD API flow can only save the current snapshot."
           : "No snapshot save call requested."
     };
 
@@ -85,7 +85,7 @@ export class LiveGraphAuthoringPlanService {
         "Read-only live API plan only; no writes were executed.",
         "effect/add and effect/connect are planned in the same order as the live MOD UI graph bootstrap.",
         snapshotSave.note,
-        "The resulting pedalboard is saved as a new bundle through /pedalboard/save."
+        "If confirmed later, the generated live graph can be saved as a new pedalboard through /pedalboard/save."
       ],
       unsupportedIdeas: plan.unsupportedIdeas
     };

@@ -5,6 +5,8 @@ import type {
   PlannedSnapshot
 } from "../types/plan.js";
 import type { PluginService } from "./pluginService.js";
+import { PedalboardSafetyService } from "./pedalboardSafetyService.js";
+import { RoleParameterProfileService } from "./roleParameterProfileService.js";
 
 interface PluginCandidate {
   name: string;
@@ -14,13 +16,16 @@ interface PluginCandidate {
 interface RoleSpec {
   role: string;
   preferred: string[];
-  fallback?: string[];
   reason: string;
-  parameterRanges: Record<string, { min: number; max: number; unit?: string }>;
+  requiresProfile?: boolean;
 }
 
 export class PedalboardPlannerService {
-  constructor(private readonly pluginService: PluginService) {}
+  constructor(
+    private readonly pluginService: PluginService,
+    private readonly profileService: RoleParameterProfileService = new RoleParameterProfileService(),
+    private readonly safetyService: PedalboardSafetyService = new PedalboardSafetyService()
+  ) {}
 
   async planFromPrompt(input: PedalboardPlanInput): Promise<PedalboardPlan> {
     const pluginList = await this.pluginService.listPlugins("both");
@@ -30,18 +35,45 @@ export class PedalboardPlannerService {
     }));
     const roles = this.rolesFor(input);
     const unsupportedIdeas: string[] = [];
+    const profileWarnings: string[] = [];
+    const promptText = promptTextFor(input);
 
-    const signalChain = roles.flatMap((role, index) => {
-      const selected =
-        this.pickPlugin(plugins, role.preferred) ?? this.pickPlugin(plugins, role.fallback ?? []);
-      if (!selected) {
-        unsupportedIdeas.push(`No installed plugin found for role: ${role.role}`);
-        return [];
-      }
-      return [this.toPlannedPlugin(role, selected, index)];
-    });
+    const resolved = await Promise.all(
+      roles.map(async (role, index) => {
+        const selected = this.pickPlugin(plugins, role.preferred);
+        if (!selected) {
+          unsupportedIdeas.push(`No installed plugin found for role: ${role.role}`);
+          return null;
+        }
 
-    return {
+        const ports = selected.uri
+          ? await this.pluginService.getPluginPorts(selected.uri)
+          : { uri: "", ports: [], audioInputs: [], audioOutputs: [], controlInputs: [] };
+        const profile = this.profileService.resolve(
+          role.role,
+          selected.name,
+          selected.uri,
+          ports,
+          promptText
+        );
+
+        unsupportedIdeas.push(...profile.unsupportedIdeas);
+        profileWarnings.push(...profile.warnings);
+
+        if (role.requiresProfile && !profile.valid) {
+          unsupportedIdeas.push(
+            `No valid controllable profile found for role: ${role.role} on ${selected.name}`
+          );
+          return null;
+        }
+
+        return this.toPlannedPlugin(role, selected, index, profile.parameterRanges);
+      })
+    );
+
+    const signalChain = resolved.filter((plugin): plugin is PlannedPlugin => Boolean(plugin));
+
+    const basePlan: PedalboardPlan = {
       dryRun: true,
       safety: {
         writesFiles: false,
@@ -60,144 +92,117 @@ export class PedalboardPlannerService {
       ],
       unsupportedIdeas
     };
+
+    const safety = this.safetyService.adjustPlan(basePlan);
+    const safetyNotes = [
+      ...dedupe(profileWarnings).map((warning) => `Role profile warning: ${warning}`),
+      ...safety.warnings.map((warning) => `Safety warning: ${warning}`),
+      ...(safety.adjustments.length > 0
+        ? [
+            `Safety adjustments applied: ${safety.adjustments
+              .map(
+                (adjustment) =>
+                  `${adjustment.plugin}/${adjustment.parameter} (${formatRange(
+                    adjustment.originalValue
+                  )} -> ${formatRange(adjustment.adjustedValue)})`
+              )
+              .join("; ")}`
+          ]
+        : [])
+    ];
+
+    return {
+      ...safety.adjustedPlan,
+      notes: [...basePlan.notes, ...safetyNotes]
+    };
   }
 
   private rolesFor(input: PedalboardPlanInput): RoleSpec[] {
-    const text =
-      `${input.style} ${input.instrument} ${input.goals.join(" ")} ${(input.referenceArtists ?? []).join(" ")}`.toLowerCase();
+    const text = promptTextFor(input);
     const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
+    const wantsSelfOscillation = matches(text, [
+      "maximum feedback",
+      "infinite",
+      "self oscillating",
+      "self-oscillating"
+    ]);
     const roles: RoleSpec[] = [];
 
     roles.push({
       role: "input gain",
       preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
       reason: "Set level into the chain and provide simple global trim.",
-      parameterRanges: { Gain: { min: -12, max: 6, unit: "dB" } }
+      requiresProfile: true
     });
 
     if (matches(text, ["bass"])) {
       roles.push({
         role: "bass amp/cab character",
-        preferred: ["GxSVT", "Bass Cabinets", "GxAlembic", "MOD Cabinet"],
-        fallback: ["Cabinet Loader", "IR loader cabsim"],
+        preferred: ["Vintage Cabinets", "MOD Cabinet", "GxAlembic", "Cabinet Loader"],
         reason: "Bass-focused amp/cabinet stage for body and low-end shape.",
-        parameterRanges: {
-          BASS: { min: 0.35, max: 0.75 },
-          MIDDLE: { min: 0.35, max: 0.7 },
-          TREBLE: { min: 0.25, max: 0.65 }
-        }
+        requiresProfile: true
       });
     } else if (matches(text, ["high gain", "metal", "heavy", "distortion", "5150", "mesa"])) {
       roles.push({
         role: "high gain drive",
-        preferred: [
-          "Neural Amp Modeler",
-          "AIDA-X",
-          "MEGA California Recto",
-          "GxSupersonic",
-          "MetalTone"
-        ],
-        fallback: ["DS1", "Open Big Muff", "CollisionDrive"],
+        preferred: ["AIDA-X", "Neural Amp Modeler", "MEGA California Recto", "GxSupersonic"],
         reason: "Main saturation and amp-like gain stage for aggressive tones.",
-        parameterRanges: {
-          PREGAIN: { min: 0.2, max: 0.75 },
-          MASTER: { min: -6, max: 3, unit: "dB" },
-          BASS: { min: 0.35, max: 0.65 },
-          MID: { min: -0.2, max: 0.25 },
-          TREBLE: { min: -0.1, max: 0.35 }
-        }
+        requiresProfile: true
       });
       roles.push(cabinetRole());
     } else if (isLetItHappenBoard) {
-      roles.push({
-        role: "core tone",
-        preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "AIDA-X", "Neural Amp Modeler"],
-        fallback: ["Volume", "TinyGain Stereo"],
-        reason: "Song-safe clean gain staging before modulation, delay, and reverb.",
-        parameterRanges: { Gain: { min: -9, max: 4, unit: "dB" } }
-      });
-    } else if (matches(text, ["clean", "ambient", "jazz", "post rock", "shoegaze"])) {
+      // Let It Happen works best as a single-gain, effects-forward chain.
+    } else if (matches(text, ["clean", "ambient", "jazz", "post rock", "shoegaze", "funk"])) {
       roles.push({
         role: "clean tone shaper",
-        preferred: ["GxAlembic", "GxCabinet", "MOD Cabinet", "Cabinet Loader"],
-        fallback: ["Gain", "Gain 2x2"],
-        reason: "Keeps the core tone clean while providing cabinet or preamp color.",
-        parameterRanges: {
-          Gain: { min: -6, max: 3, unit: "dB" }
-        }
+        preferred: ["Vintage Cabinets", "GxCabinet", "MOD Cabinet"],
+        reason: "Keeps the core tone controlled while providing cabinet or preamp color.",
+        requiresProfile: true
       });
     } else {
       roles.push({
         role: "core tone",
-        preferred: ["AIDA-X", "Neural Amp Modeler", "GxCabinet", "MOD Cabinet", "Cabinet Loader"],
-        fallback: ["Gain", "Gain 2x2"],
+        preferred: ["AIDA-X", "Neural Amp Modeler", "Vintage Cabinets", "GxCabinet", "MOD Cabinet"],
         reason: "General-purpose core tone stage based on installed plugins.",
-        parameterRanges: { Gain: { min: -9, max: 6, unit: "dB" } }
+        requiresProfile: true
       });
     }
 
     if (matches(text, ["compress", "tight", "funk", "bass", "clean"])) {
       roles.push({
         role: "dynamics",
-        preferred: ["ZamComp", "GxCompressor", "Invada Compressor (mono)", "Calf Saturator"],
+        preferred: ["ZamComp", "GxCompressor", "Invada Compressor (mono)"],
         reason: "Control transient range and keep the chain consistent.",
-        parameterRanges: {
-          threshold: { min: -36, max: -12, unit: "dB" },
-          ratio: { min: 2, max: 6 },
-          attack: { min: 0.001, max: 0.03, unit: "s" },
-          release: { min: 0.05, max: 0.4, unit: "s" }
-        }
+        requiresProfile: true
       });
     }
 
     if (matches(text, ["chorus", "80s", "wide", "modulation", "swirl", "shoegaze"])) {
       roles.push({
         role: "modulation",
-        preferred: [
-          "TAP Chorus/Flanger",
-          "Calf Flanger",
-          "GxFlanger",
-          "CS Chorus 1",
-          "Triple chorus"
-        ],
+        preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
         reason: "Adds width and movement requested by the prompt.",
-        parameterRanges: {
-          rate: { min: 0.1, max: 1.5, unit: "Hz" },
-          depth: { min: 0.15, max: 0.7 },
-          mix: { min: 10, max: 45, unit: "%" }
-        }
+        requiresProfile: true
       });
     }
 
     if (isLetItHappenBoard) {
       roles.push({
         role: "modulation",
-        preferred: [
-          "TAP Chorus/Flanger",
-          "Calf Flanger",
-          "GxFlanger",
-          "CS Chorus 1",
-          "Triple chorus"
-        ],
+        preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
         reason: "Tame Impala style width and drift for the song arrangement.",
-        parameterRanges: {
-          rate: { min: 0.15, max: 1.2, unit: "Hz" },
-          depth: { min: 0.2, max: 0.8 },
-          mix: { min: 12, max: 50, unit: "%" }
-        }
+        requiresProfile: true
       });
     }
 
     if (matches(text, ["delay", "echo", "ambient", "lead", "solo", "dub", "post rock"])) {
       roles.push({
-        role: "delay",
+        role: wantsSelfOscillation ? "feedback-capable delay" : "delay",
         preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
-        reason: "Provides repeat texture and time-based depth.",
-        parameterRanges: {
-          time: { min: 250, max: 650, unit: "ms" },
-          feedback: { min: 15, max: 55, unit: "%" },
-          mix: { min: 10, max: 40, unit: "%" }
-        }
+        reason: wantsSelfOscillation
+          ? "Feedback-heavy delay wash interpreted safely for the requested patch."
+          : "Provides repeat texture and time-based depth.",
+        requiresProfile: true
       });
     }
 
@@ -206,11 +211,7 @@ export class PedalboardPlannerService {
         role: "delay",
         preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
         reason: "Song-specific delay wash and rhythmic repeats for Let It Happen sections.",
-        parameterRanges: {
-          time: { min: 280, max: 720, unit: "ms" },
-          feedback: { min: 18, max: 62, unit: "%" },
-          mix: { min: 12, max: 44, unit: "%" }
-        }
+        requiresProfile: true
       });
     }
 
@@ -218,17 +219,14 @@ export class PedalboardPlannerService {
       roles.push({
         role: "reverb",
         preferred: [
-          "Dragonfly Plate Reverb",
           "Dragonfly Hall Reverb",
+          "Dragonfly Plate Reverb",
           "MVerb",
           "Shiroverb",
           "TAL-Reverb-II"
         ],
         reason: "Adds the requested space and tail character.",
-        parameterRanges: {
-          decay: { min: 1.2, max: 6.5, unit: "s" },
-          mix: { min: 8, max: 45, unit: "%" }
-        }
+        requiresProfile: true
       });
     }
 
@@ -243,10 +241,7 @@ export class PedalboardPlannerService {
           "TAL-Reverb-II"
         ],
         reason: "Adds a wide atmospheric tail to match the song's expansive sections.",
-        parameterRanges: {
-          decay: { min: 1.8, max: 7.5, unit: "s" },
-          mix: { min: 10, max: 38, unit: "%" }
-        }
+        requiresProfile: true
       });
     }
 
@@ -254,7 +249,7 @@ export class PedalboardPlannerService {
       role: "output level",
       preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
       reason: "Final trim before hardware outputs.",
-      parameterRanges: { Gain: { min: -12, max: 0, unit: "dB" } }
+      requiresProfile: true
     });
 
     return dedupeRoles(roles);
@@ -265,30 +260,34 @@ export class PedalboardPlannerService {
       const normalized = normalize(target);
       const found = plugins.find(
         (plugin) =>
-          normalize(plugin.name).includes(normalized) ||
-          normalize(plugin.uri ?? "").includes(normalized)
+          normalize(plugin.name) === normalized || normalize(plugin.uri ?? "") === normalized
       );
       if (found) return found;
     }
     return null;
   }
 
-  private toPlannedPlugin(role: RoleSpec, selected: PluginCandidate, index: number): PlannedPlugin {
+  private toPlannedPlugin(
+    role: RoleSpec,
+    selected: PluginCandidate,
+    index: number,
+    parameterRanges: Record<string, { min: number; max: number; unit?: string }>
+  ): PlannedPlugin {
     return {
       role: role.role,
       name: selected.name,
       uri: selected.uri,
       reason: role.reason,
       suggestedInstance: `${slug(role.role)}_${index + 1}`,
-      parameterRanges: role.parameterRanges
+      parameterRanges
     };
   }
+
   private proposeSnapshots(
     input: PedalboardPlanInput,
     signalChain: PlannedPlugin[]
   ): PlannedSnapshot[] {
-    const text =
-      `${input.style} ${input.instrument} ${input.goals.join(" ")} ${(input.referenceArtists ?? []).join(" ")}`.toLowerCase();
+    const text = promptTextFor(input);
     const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
     const hasDelay = signalChain.some((plugin) => plugin.role === "delay");
     const hasReverb = signalChain.some((plugin) => plugin.role === "reverb");
@@ -380,6 +379,10 @@ export class PedalboardPlannerService {
   }
 }
 
+function promptTextFor(input: PedalboardPlanInput): string {
+  return `${input.style} ${input.instrument} ${input.goals.join(" ")} ${(input.referenceArtists ?? []).join(" ")}`.toLowerCase();
+}
+
 function matches(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
 }
@@ -398,18 +401,9 @@ function slug(value: string): string {
 function cabinetRole(): RoleSpec {
   return {
     role: "cabinet",
-    preferred: [
-      "Cabinet Loader",
-      "IR loader cabsim",
-      "MOD Cabinet",
-      "Modern Cabinets",
-      "Vintage Cabinets"
-    ],
+    preferred: ["Vintage Cabinets", "Cabinet Loader", "MOD Cabinet", "GxCabinet"],
     reason: "Cabinet/IR stage after amp or drive processing.",
-    parameterRanges: {
-      level: { min: -18, max: -3, unit: "dB" },
-      Gain: { min: -24, max: -6, unit: "dB" }
-    }
+    requiresProfile: true
   };
 }
 
@@ -420,4 +414,13 @@ function dedupeRoles(roles: RoleSpec[]): RoleSpec[] {
     seen.add(role.role);
     return true;
   });
+}
+
+function dedupe(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function formatRange(range: { min: number; max: number; unit?: string }): string {
+  const suffix = range.unit ? ` ${range.unit}` : "";
+  return `${range.min}..${range.max}${suffix}`;
 }
