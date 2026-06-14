@@ -50,6 +50,7 @@ export class SaveLoadedPedalboardService {
         },
         appearsAfterSave: false,
         matchingPedalboards: [],
+        savedBundleInspection: null,
         apiCalls: [...this.writeApi.calls],
         banksSaveCalled: false,
         directFileWrites: false,
@@ -74,6 +75,7 @@ export class SaveLoadedPedalboardService {
         },
         appearsAfterSave: true,
         matchingPedalboards: beforeMatches,
+        savedBundleInspection: null,
         apiCalls: [...this.writeApi.calls],
         banksSaveCalled: false,
         directFileWrites: false,
@@ -89,11 +91,19 @@ export class SaveLoadedPedalboardService {
         "save currently loaded pedalboard as a new user pedalboard"
       );
       saved = response.ok
-        ? { attempted: true, success: true, endpoint: SAVE_ENDPOINT }
+        ? {
+            attempted: true,
+            success: true,
+            endpoint: SAVE_ENDPOINT,
+            httpStatus: response.status,
+            body: response.text
+          }
         : {
             attempted: true,
             success: false,
-            error: `HTTP ${response.status} from ${SAVE_ENDPOINT}`
+            error: `HTTP ${response.status} from ${SAVE_ENDPOINT}`,
+            httpStatus: response.status,
+            body: response.text
           };
     } catch (error) {
       saved = {
@@ -104,6 +114,9 @@ export class SaveLoadedPedalboardService {
     }
 
     const afterMatches = await this.findUserMatches(title);
+    const savedBundleInspection = afterMatches[0]
+      ? await this.inspectSavedBundle(afterMatches[0].bundlePath)
+      : null;
     return {
       writeToolsEnabled: true,
       confirmed: true,
@@ -113,6 +126,7 @@ export class SaveLoadedPedalboardService {
       saved,
       appearsAfterSave: afterMatches.length > 0,
       matchingPedalboards: afterMatches,
+      savedBundleInspection,
       apiCalls: [...this.writeApi.calls],
       banksSaveCalled: false,
       directFileWrites: false,
@@ -138,6 +152,7 @@ export class SaveLoadedPedalboardService {
       saved: { attempted: false, success: false, error },
       appearsAfterSave: false,
       matchingPedalboards: [],
+      savedBundleInspection: null,
       apiCalls: [],
       banksSaveCalled: false,
       directFileWrites: false,
@@ -218,6 +233,14 @@ export class SaveLoadedPedalboardService {
         normalizeTitle(pedalboard.title ?? pedalboard.bundlePath.split("/").pop() ?? "") ===
         normalizedTitle
     );
+  }
+
+  private async inspectSavedBundle(bundlePath: string) {
+    try {
+      return await this.pedalboardService.inspectPedalboard(bundlePath);
+    } catch {
+      return null;
+    }
   }
 }
 

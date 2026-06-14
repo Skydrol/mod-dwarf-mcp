@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WriteHttpResponse } from "../src/clients/writeHttpClient.js";
 import { PedalboardService } from "../src/services/pedalboardService.js";
 import { SaveLoadedPedalboardService } from "../src/services/saveLoadedPedalboardService.js";
+import type { PedalboardInspection } from "../src/types/pedalboard.js";
 import type { ApiCallRecord } from "../src/types/importBundle.js";
 import { MockRunner } from "./mockRunner.js";
 
@@ -60,6 +61,21 @@ class SaveAwareRunner extends MockRunner {
       };
     }
     return result;
+  }
+}
+
+class InspectingPedalboardService extends PedalboardService {
+  constructor(
+    runner: MockRunner,
+    private readonly inspectionByBundlePath: Record<string, PedalboardInspection>
+  ) {
+    super(runner);
+  }
+
+  override async inspectPedalboard(bundlePath: string): Promise<PedalboardInspection> {
+    const inspection = this.inspectionByBundlePath[bundlePath];
+    expect(inspection).toBeDefined();
+    return inspection!;
   }
 }
 
@@ -135,17 +151,67 @@ describe("SaveLoadedPedalboardService", () => {
     const api = new MockWriteApi(true, () => {
       runner.saved = true;
     });
+    const inspection: PedalboardInspection = {
+      bundlePath: "/root/.pedalboards/New_Safe_Board.pedalboard",
+      title: "New Safe Board",
+      source: "user",
+      files: {
+        manifest: "/root/.pedalboards/New_Safe_Board.pedalboard/manifest.ttl",
+        mainTtl: "/root/.pedalboards/New_Safe_Board.pedalboard/New_Safe_Board.ttl",
+        addressings: "/root/.pedalboards/New_Safe_Board.pedalboard/addressings.json",
+        snapshots: "/root/.pedalboards/New_Safe_Board.pedalboard/snapshots.json",
+        presets: null,
+        thumbnail: null,
+        screenshot: null
+      },
+      pluginsUsed: [{ instance: "Gain", uri: "http://moddevices.com/plugins/mod-devel/Gain" }],
+      connections: [{ tail: "capture_1", head: "Gain/In" }],
+      mappings: {},
+      snapshots: [
+        {
+          name: "Default",
+          plugins: ["Gain"],
+          portsByPlugin: {
+            Gain: { Gain: 0 }
+          },
+          parametersByPlugin: {
+            Gain: {
+              Gain: 0
+            }
+          }
+        }
+      ],
+      metadata: {
+        format: "lv2-bundle",
+        ttlBased: true,
+        jsonSidecars: ["/root/.pedalboards/New_Safe_Board.pedalboard/addressings.json"]
+      }
+    };
     const service = new SaveLoadedPedalboardService(
-      new PedalboardService(runner),
+      new InspectingPedalboardService(runner, {
+        "/root/.pedalboards/New_Safe_Board.pedalboard": inspection
+      }),
       api as never,
       true
     );
 
     const result = await service.saveAsNew({ title: "New Safe Board", confirm: true });
 
-    expect(result.saved).toEqual({ attempted: true, success: true, endpoint: "/pedalboard/save" });
+    expect(result.saved).toEqual({
+      attempted: true,
+      success: true,
+      endpoint: "/pedalboard/save",
+      httpStatus: 200,
+      body: "true"
+    });
     expect(result.appearsAfterSave).toBe(true);
     expect(result.matchingPedalboards[0].title).toBe("New Safe Board");
+    expect(result.savedBundleInspection?.bundlePath).toBe(
+      "/root/.pedalboards/New_Safe_Board.pedalboard"
+    );
+    expect(result.savedBundleInspection?.pluginsUsed[0].uri).toBe(
+      "http://moddevices.com/plugins/mod-devel/Gain"
+    );
     expect(result.apiCalls).toHaveLength(1);
     expect(result.apiCalls[0].path).toBe("/pedalboard/save");
     expect(result.banksSaveCalled).toBe(false);
