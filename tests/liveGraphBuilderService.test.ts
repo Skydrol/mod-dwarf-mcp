@@ -30,6 +30,27 @@ class MockBuilderSocket implements LiveGraphBuilderWebSocketLike {
   }
 }
 
+class MockCommandSocket {
+  public onopen: ((event: unknown) => void) | null = null;
+  public onerror: ((event: unknown) => void) | null = null;
+  public onclose: ((event: unknown) => void) | null = null;
+  public readonly sentMessages: string[] = [];
+
+  constructor() {
+    setTimeout(() => {
+      this.onopen?.({});
+    }, 0);
+  }
+
+  send(data: string): void {
+    this.sentMessages.push(data);
+  }
+
+  close(): void {
+    this.onclose?.({});
+  }
+}
+
 describe("LiveGraphBuilderService", () => {
   it("dry-run returns UI-compatible paths without calling the device", async () => {
     const plan = makePlan();
@@ -71,7 +92,7 @@ describe("LiveGraphBuilderService", () => {
 
   it("refuses apply_temporary without confirm", async () => {
     const plan = makePlan();
-    const writeApi = makeWriteApi([], []);
+    const writeApi = makeWriteApi(new MockBuilderSocket([]), []);
     const service = new LiveGraphBuilderService(
       writeApi.api as never,
       true,
@@ -144,6 +165,49 @@ describe("LiveGraphBuilderService", () => {
       "/effect/connect//graph/stereo/outL,/graph/playback_1",
       "/effect/connect//graph/stereo/outR,/graph/playback_2"
     ]);
+  });
+
+  it("mirrors parameter changes over websocket before issuing the HTTP write", async () => {
+    const initialMessages = ["loading_end"];
+    const graphSocket = new MockBuilderSocket(initialMessages);
+    const commandSocket = new MockCommandSocket();
+    const writeApi = makeWriteApi(graphSocket, []);
+    const service = new LiveGraphBuilderService(
+      writeApi.api as never,
+      true,
+      "ws://example.test/websocket",
+      () => graphSocket,
+      () => commandSocket as never
+    );
+
+    const result = await service.run({
+      mode: "apply_temporary",
+      confirm: true,
+      restoreAfterSeconds: 0,
+      plan: makePlanWithParameter()
+    });
+
+    expect(result.success).toBe(true);
+    expect(commandSocket.sentMessages).toEqual(["param_set /graph/tinygain_mono_probe/gain -6"]);
+    expect(writeApi.calls.map((call) => call.method + " " + call.path)).toEqual([
+      "GET /effect/add//graph/tinygain_mono_probe?x=120&y=120&uri=http%3A//gareus.org/oss/lv2/tinygain%23mono",
+      "GET /effect/add//graph/bollie_delay_probe?x=360&y=140&uri=https%3A//ca9.eu/lv2/bolliedelay",
+      "GET /effect/connect//graph/capture_1,/graph/tinygain_mono_probe/in",
+      "GET /effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+      "GET /effect/connect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+      "GET /effect/connect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+      "GET /effect/connect//graph/bollie_delay_probe/out_r,/graph/playback_2",
+      "POST /effect/parameter/set/",
+      "GET /effect/disconnect//graph/bollie_delay_probe/out_r,/graph/playback_2",
+      "GET /effect/disconnect//graph/bollie_delay_probe/out_l,/graph/playback_1",
+      "GET /effect/disconnect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_r",
+      "GET /effect/disconnect//graph/tinygain_mono_probe/out,/graph/bollie_delay_probe/in_l",
+      "GET /effect/disconnect//graph/capture_1,/graph/tinygain_mono_probe/in",
+      "GET /effect/remove//graph/bollie_delay_probe",
+      "GET /effect/remove//graph/tinygain_mono_probe"
+    ]);
+    const parameterCall = writeApi.calls.find((call) => call.path === "/effect/parameter/set/");
+    expect(parameterCall?.body).toBe("/graph/tinygain_mono_probe/gain/-6");
   });
 });
 
@@ -260,6 +324,7 @@ function makeWriteApi(
       fields: Record<string, string | number | boolean>,
       purpose: string
     ): Promise<WriteHttpResponse>;
+    postJson(path: string, body: unknown, purpose: string): Promise<WriteHttpResponse>;
   };
   calls: Array<{ method: string; path: string; body?: unknown }>;
 } {
@@ -281,6 +346,16 @@ function makeWriteApi(
         fields: Record<string, string | number | boolean>
       ): Promise<WriteHttpResponse> {
         calls.push({ method: "POST", path, body: fields });
+        return {
+          ok: true,
+          status: 200,
+          body: Buffer.from("true"),
+          text: "true"
+        };
+      },
+      async postJson(path: string, body: unknown, purpose: string): Promise<WriteHttpResponse> {
+        void purpose;
+        calls.push({ method: "POST", path, body });
         return {
           ok: true,
           status: 200,
@@ -333,4 +408,34 @@ function emitForPath(socket: MockBuilderSocket, path: string): void {
   if (path === "/effect/remove//graph/stereo_api_probe") {
     socket.emit("remove /graph/stereo_api_probe");
   }
+}
+
+function makePlanWithParameter(): LiveGraphAuthoringPlan {
+  const plan = makePlan();
+  plan.plugins[0].parameterPlans = [
+    {
+      requestedKey: "gain",
+      symbol: "gain",
+      name: "Gain",
+      minimum: -40,
+      maximum: 40,
+      default: 0,
+      unit: "dB",
+      properties: [],
+      requestedRange: { min: -12, max: 6, unit: "dB" },
+      resolvedRange: { min: -12, max: 6, unit: "dB" },
+      value: -6
+    }
+  ];
+  plan.apiCalls = [
+    ...plan.apiCalls,
+    {
+      method: "POST",
+      path: "/effect/parameter/set/",
+      purpose: "set /graph/tinygain_mono_probe/gain to -6",
+      body: { kind: "json", value: "/graph/tinygain_mono_probe/gain/-6" }
+    }
+  ];
+  plan.validation.parameters.callCount = 1;
+  return plan;
 }

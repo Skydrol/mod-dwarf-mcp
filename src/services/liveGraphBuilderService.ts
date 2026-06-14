@@ -21,7 +21,18 @@ export interface LiveGraphBuilderWebSocketLike {
   close(code?: number, reason?: string): void;
 }
 
+export interface LiveGraphBuilderCommandSocketLike {
+  onopen: ((event: unknown) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onclose: ((event: unknown) => void) | null;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
 export type LiveGraphBuilderWebSocketFactory = (url: string) => LiveGraphBuilderWebSocketLike;
+export type LiveGraphBuilderCommandSocketFactory = (
+  url: string
+) => LiveGraphBuilderCommandSocketLike;
 
 const DEFAULT_RESTORE_AFTER_SECONDS = 5;
 const SUPPORT_NAME = "linear_chain_v1";
@@ -31,7 +42,8 @@ export class LiveGraphBuilderService {
     private readonly writeApi: WriteHttpClient | null,
     private readonly writeToolsEnabled: boolean,
     private readonly websocketUrl: string,
-    private readonly websocketFactory: LiveGraphBuilderWebSocketFactory = defaultWebSocketFactory
+    private readonly websocketFactory: LiveGraphBuilderWebSocketFactory = defaultWebSocketFactory,
+    private readonly commandSocketFactory: LiveGraphBuilderCommandSocketFactory = defaultCommandWebSocketFactory
   ) {}
 
   async run(input: {
@@ -70,6 +82,7 @@ export class LiveGraphBuilderService {
     const parameterCalls = planAnalysis.parameterCalls;
     const pluginPlans = planAnalysis.plugins;
     const pluginInstances = pluginPlans.map((plugin) => plugin.instance);
+    let commandSocket: LiveGraphCommandSocket | null = null;
 
     await monitor.waitFor((raw) => raw.startsWith("loading_end"), 1500).catch(() => null);
     const baseline = monitor.snapshot();
@@ -174,6 +187,21 @@ export class LiveGraphBuilderService {
       afterConnects = monitor.captureState();
 
       parametersSucceeded = true;
+      if (parameterCalls.length > 0) {
+        try {
+          commandSocket = await LiveGraphCommandSocket.open(
+            this.websocketUrl,
+            this.commandSocketFactory
+          );
+        } catch (error) {
+          parametersSucceeded = false;
+          unexpectedBehavior.push(
+            error instanceof Error
+              ? error.message
+              : "Failed to open websocket command channel for parameter sync"
+          );
+        }
+      }
       for (const call of parameterCalls) {
         const payload = parseParameterPayload(call.body);
         if (!payload) {
@@ -181,7 +209,19 @@ export class LiveGraphBuilderService {
           unexpectedBehavior.push(`Parameter call was missing instance/symbol/value: ${call.path}`);
           continue;
         }
-        const response = await this.writeApi.postJson(call.path, payload, call.purpose);
+        if (commandSocket) {
+          try {
+            commandSocket.sendParamSet(payload.instance, payload.symbol, payload.value);
+          } catch (error) {
+            parametersSucceeded = false;
+            unexpectedBehavior.push(
+              error instanceof Error
+                ? error.message
+                : `Failed to mirror parameter change over websocket for ${call.path}`
+            );
+          }
+        }
+        const response = await this.writeApi.postJson(call.path, payload.body, call.purpose);
         apiCalls.push(recordCall("POST", call.path, call.purpose, response));
         if (!response.ok) {
           parametersSucceeded = false;
@@ -314,6 +354,11 @@ export class LiveGraphBuilderService {
         ]
       };
     } finally {
+      try {
+        commandSocket?.close();
+      } catch {
+        // Best effort cleanup.
+      }
       if (
         input.mode === "apply_temporary" &&
         !restoreSucceeded &&
@@ -557,20 +602,46 @@ function formatNumber(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
 
-function parseParameterPayload(body: unknown): string | null {
+function parseParameterPayload(body: unknown): {
+  instance: string;
+  symbol: string;
+  value: number;
+  body: string;
+} | null {
   if (!body || typeof body !== "object") return null;
   const record = body as { kind?: string; value?: unknown };
   if (record.kind === "json") {
     if (typeof record.value === "string") {
-      return record.value;
+      const parsed = parseParameterJsonString(record.value);
+      return parsed ? { ...parsed, body: record.value } : null;
     }
     const value = record.value as
       | { instance?: string; symbol?: string; value?: number }
       | undefined;
     if (!value?.instance || !value.symbol || typeof value.value !== "number") return null;
-    return `${uiGraphRef(value.instance)}/${value.symbol}/${formatNumber(value.value)}`;
+    return {
+      instance: value.instance,
+      symbol: value.symbol,
+      value: value.value,
+      body: `${uiGraphRef(value.instance)}/${value.symbol}/${formatNumber(value.value)}`
+    };
   }
   return null;
+}
+
+function parseParameterJsonString(value: string): {
+  instance: string;
+  symbol: string;
+  value: number;
+} | null {
+  const prefix = "/graph/";
+  if (!value.startsWith(prefix)) return null;
+  const parts = value.slice(prefix.length).split("/");
+  if (parts.length < 3) return null;
+  const [instance, symbol, ...rest] = parts;
+  const numeric = Number(rest.join("/"));
+  if (!instance || !symbol || !Number.isFinite(numeric)) return null;
+  return { instance, symbol, value: numeric };
 }
 
 function emptyWebsocketState(url: string): LiveGraphBuilderWebsocketState {
@@ -909,4 +980,58 @@ function defaultWebSocketFactory(url: string): LiveGraphBuilderWebSocketLike {
     throw new Error("WebSocket is not available in this runtime");
   }
   return new WebSocketCtor(url) as unknown as LiveGraphBuilderWebSocketLike;
+}
+
+function defaultCommandWebSocketFactory(url: string): LiveGraphBuilderCommandSocketLike {
+  const WebSocketCtor = globalThis.WebSocket;
+  if (!WebSocketCtor) {
+    throw new Error("WebSocket is not available in this runtime");
+  }
+  return new WebSocketCtor(url) as unknown as LiveGraphBuilderCommandSocketLike;
+}
+
+class LiveGraphCommandSocket {
+  private constructor(
+    private readonly socket: LiveGraphBuilderCommandSocketLike,
+    private readonly socketUrl: string
+  ) {}
+
+  static async open(
+    url: string,
+    factory: LiveGraphBuilderCommandSocketFactory
+  ): Promise<LiveGraphCommandSocket> {
+    const socket = factory(url);
+    await waitForOpen(socket);
+    return new LiveGraphCommandSocket(socket, url);
+  }
+
+  sendParamSet(instance: string, symbol: string, value: number): void {
+    this.socket.send(`param_set ${uiGraphRef(instance)}/${symbol} ${formatNumber(value)}`);
+  }
+
+  close(): void {
+    this.socket.close();
+  }
+
+  get url(): string {
+    return this.socketUrl;
+  }
+}
+
+function waitForOpen(
+  socket: LiveGraphBuilderCommandSocketLike | LiveGraphBuilderWebSocketLike
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onOpen = () => resolve();
+    const onError = (event: unknown) =>
+      reject(event instanceof Error ? event : new Error("Failed to open websocket"));
+
+    socket.onopen = onOpen;
+    socket.onerror = onError;
+
+    const readyState = (socket as { readyState?: number }).readyState;
+    if (readyState === 1) {
+      resolve();
+    }
+  });
 }
