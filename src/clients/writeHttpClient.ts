@@ -70,6 +70,19 @@ export class WriteHttpClient {
     );
   }
 
+  async postJson(path: string, value: unknown, purpose: string): Promise<WriteHttpResponse> {
+    this.assertPath(path);
+    return this.request(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify(value),
+        headers: { "Content-Type": "application/json" }
+      },
+      purpose
+    );
+  }
+
   async postRawFile(path: string, filePath: string, purpose: string): Promise<WriteHttpResponse> {
     this.assertPath(path);
     const bytes = await readFile(filePath);

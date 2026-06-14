@@ -67,6 +67,27 @@ describe("parsers", () => {
     expect(gainPort?.maximum).toBe(40);
   });
 
+  it("parses lv2info port properties", () => {
+    const info = parseLv2InfoPorts(
+      [
+        "http://example.com/plugin",
+        "",
+        "\tPort 0:",
+        "\t\tType:        http://lv2plug.in/ns/lv2core#ControlPort",
+        "\t\t             http://lv2plug.in/ns/lv2core#InputPort",
+        "\t\tSymbol:      mode",
+        "\t\tName:        Mode",
+        "\t\tProperties:  http://lv2plug.in/ns/ext/port-props#integer",
+        "\t\t             http://lv2plug.in/ns/ext/port-props#enumeration"
+      ].join("\n"),
+      "http://example.com/plugin"
+    );
+    expect(info.ports[0].properties).toEqual([
+      "http://lv2plug.in/ns/ext/port-props#integer",
+      "http://lv2plug.in/ns/ext/port-props#enumeration"
+    ]);
+  });
+
   it("parses banks", () => {
     const banks = parseBanks(readFileSync(join(fixtureRoot, "banks/user-banks.json"), "utf8"));
     expect(banks[0].title).toBe("User Bank");

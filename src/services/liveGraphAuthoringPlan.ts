@@ -1,14 +1,14 @@
 import type { PluginService } from "./pluginService.js";
+import { LiveParameterService } from "./liveParameterService.js";
 import type { PedalboardPlan, PlannedPlugin } from "../types/plan.js";
 import type {
   LiveGraphApiCall,
   LiveGraphAuthoringPlan,
   LiveGraphAuthoringValidation,
   LiveGraphParameterPlan,
-  LiveGraphPluginPlan,
-  LiveGraphPortRange
+  LiveGraphPluginPlan
 } from "../types/liveGraphAuthoringPlan.js";
-import type { PluginPort, PluginPortInfo } from "../types/plugin.js";
+import type { PluginPortInfo } from "../types/plugin.js";
 import { uiGraphInstancePath } from "./liveGraphRefs.js";
 
 interface ResolvedPlugin {
@@ -20,7 +20,10 @@ interface ResolvedPlugin {
 export class LiveGraphAuthoringPlanService {
   private readonly portCache = new Map<string, PluginPortInfo>();
 
-  constructor(private readonly pluginService: PluginService) {}
+  constructor(
+    private readonly pluginService: PluginService,
+    private readonly liveParameterService: LiveParameterService = new LiveParameterService()
+  ) {}
 
   async buildPlan(plan: PedalboardPlan): Promise<LiveGraphAuthoringPlan> {
     const availableUris = await this.installedPluginUris();
@@ -172,13 +175,7 @@ export class LiveGraphAuthoringPlanService {
     let callCount = 0;
 
     for (const resolved of resolvedPlugins) {
-      const used = new Set<string>();
-      const plans = this.resolveParameterPlans(
-        resolved.plan,
-        resolved.ports,
-        used,
-        parameterErrors
-      );
+      const plans = this.resolveParameterPlans(resolved.plan, resolved.ports, parameterErrors);
       resolved.controlRanges.push(...plans);
       callCount += plans.length;
     }
@@ -260,59 +257,15 @@ export class LiveGraphAuthoringPlanService {
   private resolveParameterPlans(
     plan: PlannedPlugin,
     ports: PluginPortInfo,
-    used: Set<string>,
     errors: string[]
   ): LiveGraphParameterPlan[] {
-    return Object.entries(plan.parameterRanges).flatMap(([requestedKey, requestedRange]) => {
-      const port = findControlPort(requestedKey, ports.controlInputs, used);
-      if (!port) {
-        errors.push(`Parameter '${requestedKey}' not found on ${plan.uri || plan.name}`);
-        return [];
-      }
-
-      used.add(port.symbol);
-      const resolvedRange = this.resolveRange(requestedRange, port);
-      if (resolvedRange.min > resolvedRange.max) {
-        errors.push(
-          `Parameter '${requestedKey}' on ${plan.uri || plan.name} has no overlap between requested and device ranges`
-        );
-        return [];
-      }
-
-      const value = midpoint(resolvedRange.min, resolvedRange.max);
-      if (port.minimum !== undefined && value < port.minimum) {
-        errors.push(
-          `Parameter '${requestedKey}' on ${plan.uri || plan.name} resolved below device minimum`
-        );
-        return [];
-      }
-      if (port.maximum !== undefined && value > port.maximum) {
-        errors.push(
-          `Parameter '${requestedKey}' on ${plan.uri || plan.name} resolved above device maximum`
-        );
-        return [];
-      }
-
-      return [
-        {
-          requestedKey,
-          symbol: port.symbol,
-          requestedRange,
-          resolvedRange,
-          value
-        }
-      ];
-    });
-  }
-
-  private resolveRange(requested: LiveGraphPortRange, port: PluginPort): LiveGraphPortRange {
-    const min = Math.max(requested.min, port.minimum ?? requested.min);
-    const max = Math.min(requested.max, port.maximum ?? requested.max);
-    return {
-      min,
-      max,
-      unit: port.unit ?? requested.unit
-    };
+    const resolved = this.liveParameterService.resolveParameterPlans(
+      plan.name,
+      ports,
+      plan.parameterRanges
+    );
+    errors.push(...resolved.errors);
+    return resolved.parameterPlans;
   }
 
   private toPluginPlan(resolved: ResolvedPlugin, index: number): LiveGraphPluginPlan {
@@ -393,19 +346,7 @@ export class LiveGraphAuthoringPlanService {
 
     for (const plugin of plugins) {
       for (const parameter of plugin.parameterPlans) {
-        calls.push({
-          method: "POST",
-          path: "/effect/parameter/set/",
-          purpose: `set ${plugin.instance}/${parameter.symbol} to ${formatNumber(parameter.value)}`,
-          body: {
-            kind: "json",
-            value: {
-              instance: `/graph/${plugin.instance}`,
-              symbol: parameter.symbol,
-              value: parameter.value
-            }
-          }
-        });
+        calls.push(this.liveParameterService.buildParameterCall(plugin.instance, parameter));
       }
     }
 
@@ -457,63 +398,6 @@ function pairPorts(sources: string[], destinations: string[]): Array<[string, st
     sources[Math.min(index, sources.length - 1)],
     destination
   ]);
-}
-
-function findControlPort(key: string, ports: PluginPort[], used: Set<string>): PluginPort | null {
-  const normalizedKey = normalizePortKey(key);
-
-  const exactSymbol = ports.find(
-    (port) => !used.has(port.symbol) && normalizePortKey(port.symbol) === normalizedKey
-  );
-  if (exactSymbol) return exactSymbol;
-
-  const exactName = ports.find(
-    (port) => !used.has(port.symbol) && normalizePortKey(port.name ?? "") === normalizedKey
-  );
-  if (exactName) return exactName;
-
-  const aliases = CONTROL_ALIASES[normalizedKey] ?? [];
-  for (const alias of aliases) {
-    const normalizedAlias = normalizePortKey(alias);
-    const matched = ports.find(
-      (port) =>
-        !used.has(port.symbol) &&
-        (normalizePortKey(port.symbol) === normalizedAlias ||
-          normalizePortKey(port.name ?? "") === normalizedAlias)
-    );
-    if (matched) return matched;
-  }
-
-  return null;
-}
-
-const CONTROL_ALIASES: Record<string, string[]> = {
-  gain: ["gain", "volume", "level"],
-  level: ["level", "volume", "gain"],
-  mix: ["mix", "blend", "wetlevel", "wet", "earlylevel"],
-  feedback: ["feedback"],
-  time: ["time", "delay", "delaytime", "divl"],
-  rate: ["rate", "frequency"],
-  depth: ["depth"],
-  threshold: ["threshold", "thr"],
-  ratio: ["ratio", "rat"],
-  attack: ["attack", "att"],
-  release: ["release", "rel"],
-  decay: ["decay"],
-  lowcut: ["lowcut", "lowf"],
-  highcut: ["highcut", "highf"]
-};
-
-function normalizePortKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function midpoint(min: number, max: number): number {
-  return min + (max - min) / 2;
-}
-
-function formatNumber(value: number): string {
-  return Number(value.toFixed(4)).toString();
 }
 
 function safeInstance(plugin: PlannedPlugin): string {

@@ -99,29 +99,17 @@ describe("LiveGraphAuthoringPlanService", () => {
     const gainSet = plan.apiCalls[7];
     expect(gainSet.body).toEqual({
       kind: "json",
-      value: {
-        instance: "/graph/gain_1",
-        symbol: "Gain",
-        value: -3
-      }
+      value: "/graph/gain_1/Gain/-6"
     });
     const mixSet = plan.apiCalls[8];
     expect(mixSet.body).toEqual({
       kind: "json",
-      value: {
-        instance: "/graph/mverb_2",
-        symbol: "mix",
-        value: expect.closeTo(0.3, 10)
-      }
+      value: "/graph/mverb_2/mix/0.35"
     });
     const decaySet = plan.apiCalls[9];
     expect(decaySet.body).toEqual({
       kind: "json",
-      value: {
-        instance: "/graph/mverb_2",
-        symbol: "decay",
-        value: 2.5
-      }
+      value: "/graph/mverb_2/decay/2.5"
     });
   });
 

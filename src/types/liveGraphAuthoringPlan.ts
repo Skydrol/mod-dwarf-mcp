@@ -23,6 +23,12 @@ export interface LiveGraphPortRange {
 export interface LiveGraphParameterPlan {
   requestedKey?: string;
   symbol: string;
+  name: string;
+  minimum: number;
+  maximum: number;
+  default?: number;
+  unit?: string;
+  properties: string[];
   requestedRange?: unknown;
   resolvedRange?: unknown;
   value: number;

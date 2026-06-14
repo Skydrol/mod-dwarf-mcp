@@ -22,6 +22,7 @@ export interface PluginPort {
   minimum?: number;
   maximum?: number;
   unit?: string;
+  properties: string[];
 }
 
 export interface PluginPortInfo {

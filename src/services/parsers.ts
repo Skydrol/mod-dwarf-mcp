@@ -124,6 +124,12 @@ export function parseLv2InfoPorts(text: string, uri: string): PluginPortInfo {
     const maximumMatch = block.match(/Maximum:\s+([^\n]+)/);
     const defaultMatch = block.match(/Default:\s+([^\n]+)/);
     const unitMatch = block.match(/Unit:\s+([^\n]+)/);
+    const propertiesMatch = block.match(/Properties?:\s*([\s\S]*?)(?=\n\s*[A-Z][A-Za-z ]+:|\n*$)/);
+    const properties = propertiesMatch
+      ? [...propertiesMatch[1].matchAll(/https?:\/\/[^\s>]+#[A-Za-z0-9_-]+/g)].map(
+          (item) => item[0]
+        )
+      : [];
 
     ports.push({
       index,
@@ -135,7 +141,8 @@ export function parseLv2InfoPorts(text: string, uri: string): PluginPortInfo {
       minimum: minimumMatch ? Number(minimumMatch[1]) : undefined,
       maximum: maximumMatch ? Number(maximumMatch[1]) : undefined,
       default: defaultMatch ? Number(defaultMatch[1]) : undefined,
-      unit: unitMatch ? unitMatch[1].trim() : undefined
+      unit: unitMatch ? unitMatch[1].trim() : undefined,
+      properties
     });
   }
 

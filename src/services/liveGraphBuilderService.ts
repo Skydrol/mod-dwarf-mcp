@@ -175,21 +175,13 @@ export class LiveGraphBuilderService {
 
       parametersSucceeded = true;
       for (const call of parameterCalls) {
-        const payload = parseParameterPayload(call);
+        const payload = parseParameterPayload(call.body);
         if (!payload) {
           parametersSucceeded = false;
           unexpectedBehavior.push(`Parameter call was missing instance/symbol/value: ${call.path}`);
           continue;
         }
-        const response = await this.writeApi.postForm(
-          call.path,
-          {
-            instance: uiGraphRef(payload.instance),
-            symbol: payload.symbol,
-            value: payload.value
-          },
-          call.purpose
-        );
+        const response = await this.writeApi.postJson(call.path, payload, call.purpose);
         apiCalls.push(recordCall("POST", call.path, call.purpose, response));
         if (!response.ok) {
           parametersSucceeded = false;
@@ -561,19 +553,24 @@ function normalizeConnectPath(connectPath: string): string {
   return `/effect/connect/${uiGraphRef(parsed.source)},${uiGraphRef(parsed.target)}`;
 }
 
-function parseParameterPayload(call: {
-  body: unknown;
-}): { instance: string; symbol: string; value: number } | null {
-  const body = call.body as
-    | { value?: { instance?: string; symbol?: string; value?: number } }
-    | undefined;
-  const value = body?.value;
-  if (!value?.instance || !value.symbol || typeof value.value !== "number") return null;
-  return {
-    instance: canonicalGraphRef(value.instance),
-    symbol: value.symbol,
-    value: value.value
-  };
+function formatNumber(value: number): string {
+  return Number(value.toFixed(4)).toString();
+}
+
+function parseParameterPayload(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const record = body as { kind?: string; value?: unknown };
+  if (record.kind === "json") {
+    if (typeof record.value === "string") {
+      return record.value;
+    }
+    const value = record.value as
+      | { instance?: string; symbol?: string; value?: number }
+      | undefined;
+    if (!value?.instance || !value.symbol || typeof value.value !== "number") return null;
+    return `${uiGraphRef(value.instance)}/${value.symbol}/${formatNumber(value.value)}`;
+  }
+  return null;
 }
 
 function emptyWebsocketState(url: string): LiveGraphBuilderWebsocketState {

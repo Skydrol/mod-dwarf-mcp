@@ -249,6 +249,12 @@ const liveGraphParameterPlanSchema = z
   .object({
     requestedKey: z.string().optional(),
     symbol: z.string().min(1),
+    name: z.string().min(1),
+    minimum: z.number(),
+    maximum: z.number(),
+    default: z.number().optional(),
+    unit: z.string().optional(),
+    properties: z.array(z.string()),
     requestedRange: z.unknown().optional(),
     resolvedRange: z.unknown().optional(),
     value: z.number()
