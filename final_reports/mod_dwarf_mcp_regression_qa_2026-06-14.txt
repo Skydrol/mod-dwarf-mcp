@@ -1,0 +1,101 @@
+Regression QA Report
+
+1. Tame Impala / Let It Happen inspired guitar pedalboard
+- Passed checks:
+  - Selected plugins exist: `TinyGain Mono`, `TAP Chorus/Flanger`, `Bollie Delay`, `Dragonfly Hall Reverb`, `Gain 2x2`.
+  - Parameter mappings are valid in the live plan.
+  - Unsafe output gains are clamped to `-12..-3 dB` at the output stage.
+  - Snapshot output gain stays controlled: `-6`, `-5.25`, `-4.5`, `-3.75`, `-3`.
+  - Duplicate `TinyGain Mono` staging is gone for this prompt.
+  - Dry-run wording is unambiguous.
+  - Multi-snapshot limitation is clearly reported.
+  - Dry-run avoids writes.
+- Remaining failures:
+  - None for this prompt in the current pass.
+- New issues introduced:
+  - None observed.
+- Severity:
+  - Low
+- Recommended next implementation step:
+  - Keep this path as the baseline regression case and use it as the positive control for future prompt-safety changes.
+
+2. Infinite shoegaze reverb wall with maximum feedback
+- Passed checks:
+  - Selected plugins exist.
+  - Parameter mappings are valid in the live plan.
+  - Unsafe output gains are clamped.
+  - Delay/reverb risk prompts produce warnings.
+  - Dry-run wording is unambiguous.
+  - Multi-snapshot limitation is clearly reported.
+  - Dry-run avoids writes.
+- Remaining failures:
+  - The chain does not actually contain a true feedback-heavy delay topology, so the request is only partially satisfied musically.
+  - The output still uses two gain stages in places where the arrangement could likely be simplified.
+- New issues introduced:
+  - No new safety regressions.
+- Severity:
+  - Medium
+- Recommended next implementation step:
+  - Add a more feedback-capable ambient path or make the planner explicitly state when the available plugin set cannot express true self-reinforcing walls safely.
+
+3. Loudest possible doom metal tone
+- Passed checks:
+  - Unsafe output gains are clamped.
+  - Dry-run wording is unambiguous.
+  - Dry-run avoids writes.
+- Remaining failures:
+  - Live validation still fails because the selected cabinet plugin does not accept the generic `level` / `Gain` parameter guesses.
+  - The plan still falls back to an incompatible amp/cab combo for the requested tone.
+- New issues introduced:
+  - None beyond the existing parameter-mapping gap.
+- Severity:
+  - High
+- Recommended next implementation step:
+  - Tighten plugin-role matching for heavy tones so the planner only proposes control sets that exist on the chosen amp/cab plugins.
+
+4. Noisy self-oscillating delay patch
+- Passed checks:
+  - Delay/feedback risk prompts produce warnings.
+  - Unsafe output gains are clamped.
+  - Dry-run wording is unambiguous.
+  - Dry-run avoids writes.
+- Remaining failures:
+  - The live plan is still invalid because the amp-stage parameter guesses do not match the selected plugin.
+  - The delay path does not produce a real self-oscillating configuration.
+- New issues introduced:
+  - None observed.
+- Severity:
+  - High
+- Recommended next implementation step:
+  - Add a safer “feedback-capable delay” branch that only uses plugins with validated feedback/time controls and rejects impossible self-oscillation requests cleanly.
+
+5. Clean funk tone but with massive output volume
+- Passed checks:
+  - Unsafe output gains are clamped.
+  - Dry-run wording is unambiguous.
+  - Dry-run avoids writes.
+  - Multi-snapshot limitation is clearly reported.
+- Remaining failures:
+  - The chain still uses duplicate gain staging in a way that feels unnecessary for a clean funk tone.
+  - The planner reports `dynamics` as unsupported for this fixture set.
+- New issues introduced:
+  - None observed.
+- Severity:
+  - Medium
+- Recommended next implementation step:
+  - Prefer a single front-end gain stage for clean funk and avoid adding extra gain blocks unless the plugin catalog can justify them.
+
+Cross-cutting checks
+- Confirm gating:
+  - Existing tests still show `confirm=false` blocks write tools for import and save flows.
+- Dry-run behavior:
+  - Still read-only in the planner/live-plan flow.
+  - The output wording now says the graph can be saved later if confirmed, rather than implying a write already happened.
+- Snapshot safety:
+  - Snapshot gains now stay within a controlled range and do not jump to unsafe boosts.
+
+Overall regression summary
+- Passed: Let It Happen-style board, dry-run honesty, snapshot safety, write gating, safety warnings.
+- Still failing: doom metal parameter mapping, self-oscillating delay expressiveness, some unnecessary gain staging on simpler tones, and partial musical fidelity for the “infinite” wall request.
+- Highest-priority next step:
+  - Add stricter role-to-plugin parameter templates for high-gain and delay-heavy prompts so the planner only emits controls that actually exist on the selected plugins.

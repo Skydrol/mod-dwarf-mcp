@@ -1,0 +1,23 @@
+Committed only the graph layout files.
+
+- Commit: `9e51a8a` `Add deterministic graph layout service`
+- Files committed:
+  - [src/services/graphLayoutService.ts](/E:/__Mod%20Dwarf%20MCP/mod-dwarf-mcp/src/services/graphLayoutService.ts)
+  - [src/services/liveGraphAuthoringPlan.ts](/E:/__Mod%20Dwarf%20MCP/mod-dwarf-mcp/src/services/liveGraphAuthoringPlan.ts)
+  - [tests/graphLayoutService.test.ts](/E:/__Mod%20Dwarf%20MCP/mod-dwarf-mcp/tests/graphLayoutService.test.ts)
+  - [tests/liveGraphAuthoringPlan.test.ts](/E:/__Mod%20Dwarf%20MCP/mod-dwarf-mcp/tests/liveGraphAuthoringPlan.test.ts)
+
+Checks run:
+- `npx prettier --write src/services/graphLayoutService.ts src/services/liveGraphAuthoringPlan.ts tests/graphLayoutService.test.ts tests/liveGraphAuthoringPlan.test.ts`
+- `npm run build`
+- `npm test`
+- `npm run lint`
+- `npx prettier --check src/services/graphLayoutService.ts src/services/liveGraphAuthoringPlan.ts tests/graphLayoutService.test.ts tests/liveGraphAuthoringPlan.test.ts`
+
+Result:
+- All targeted checks passed.
+
+Repo-wide format:
+- Still a known pre-existing issue.
+- I did not run repo-wide `npm run format`.
+- The working tree is clean except for the pre-existing untracked report artifacts in `final_reports/` and `mcp_test_summary.txt`, which I left untouched.
