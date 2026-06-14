@@ -1,5 +1,6 @@
 import type { PluginService } from "./pluginService.js";
 import { LiveParameterService } from "./liveParameterService.js";
+import { GraphLayoutService } from "./graphLayoutService.js";
 import type { PedalboardPlan, PlannedPlugin } from "../types/plan.js";
 import type {
   LiveGraphApiCall,
@@ -9,6 +10,7 @@ import type {
   LiveGraphPluginPlan
 } from "../types/liveGraphAuthoringPlan.js";
 import type { PluginPortInfo } from "../types/plugin.js";
+import type { GraphLayoutPlacement } from "./graphLayoutService.js";
 import { uiGraphInstancePath } from "./liveGraphRefs.js";
 
 interface ResolvedPlugin {
@@ -22,7 +24,8 @@ export class LiveGraphAuthoringPlanService {
 
   constructor(
     private readonly pluginService: PluginService,
-    private readonly liveParameterService: LiveParameterService = new LiveParameterService()
+    private readonly liveParameterService: LiveParameterService = new LiveParameterService(),
+    private readonly graphLayoutService: GraphLayoutService = new GraphLayoutService()
   ) {}
 
   async buildPlan(plan: PedalboardPlan): Promise<LiveGraphAuthoringPlan> {
@@ -51,8 +54,11 @@ export class LiveGraphAuthoringPlanService {
       title
     };
 
+    const layout = this.graphLayoutService.layoutPlugins(
+      resolvedPlugins.map((resolved) => resolved.plan)
+    );
     const pluginPlans = resolvedPlugins.map((resolved, index) =>
-      this.toPluginPlan(resolved, index)
+      this.toPluginPlan(resolved, layout[index])
     );
     const connectionCalls = this.buildConnectionCalls(resolvedPlugins);
     const apiCalls = this.buildApiCalls(pluginPlans, connectionCalls, snapshotSave.included, title);
@@ -268,19 +274,20 @@ export class LiveGraphAuthoringPlanService {
     return resolved.parameterPlans;
   }
 
-  private toPluginPlan(resolved: ResolvedPlugin, index: number): LiveGraphPluginPlan {
+  private toPluginPlan(
+    resolved: ResolvedPlugin,
+    layout: Pick<GraphLayoutPlacement, "x" | "y">
+  ): LiveGraphPluginPlan {
     const instance = safeInstance(resolved.plan);
-    const x = 100 + index * 220;
-    const y = index % 2 === 0 ? 180 : 300;
 
     return {
       role: resolved.plan.role,
       name: resolved.plan.name,
       uri: resolved.plan.uri ?? "",
       instance,
-      x,
-      y,
-      addCall: this.effectAddCall(instance, resolved.plan.uri ?? "", x, y),
+      x: layout.x,
+      y: layout.y,
+      addCall: this.effectAddCall(instance, resolved.plan.uri ?? "", layout.x, layout.y),
       parameterPlans: resolved.controlRanges,
       connectCalls: []
     };
