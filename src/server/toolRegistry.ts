@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
+import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
 import { runLiveGraphExperimentTool } from "../tools/runLiveGraphExperiment.js";
 import { getDeviceInfoTool } from "../tools/getDeviceInfo.js";
@@ -15,7 +16,11 @@ import { loadExistingPedalboardTool } from "../tools/loadExistingPedalboard.js";
 import { planPedalboardFromPromptTool } from "../tools/planPedalboardFromPrompt.js";
 import { saveLoadedPedalboardAsNewTool } from "../tools/saveLoadedPedalboardAsNew.js";
 import type { ToolContext } from "../tools/toolContext.js";
-import { dryPedalboardBundleSchema, pedalboardPlanSchema } from "../schemas/tools.js";
+import {
+  dryPedalboardBundleSchema,
+  liveGraphAuthoringPlanSchema,
+  pedalboardPlanSchema
+} from "../schemas/tools.js";
 
 export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
@@ -174,6 +179,22 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createLiveGraphAuthoringPlanTool(input, context)
+  );
+
+  server.registerTool(
+    "run_live_graph_builder_dry_run_or_apply",
+    {
+      title: "Dry-run or temporarily apply a live graph plan",
+      description:
+        "Dry-run or apply a temporary live MOD UI stereo chain using UI-compatible /graph instance paths, websocket validation, and automatic rollback. Never saves or calls /banks/save.",
+      inputSchema: {
+        mode: z.enum(["dry_run", "apply_temporary"]),
+        confirm: z.boolean(),
+        restoreAfterSeconds: z.number().int().positive().optional(),
+        plan: liveGraphAuthoringPlanSchema
+      }
+    },
+    async (input) => runLiveGraphBuilderDryRunOrApplyTool(input, context)
   );
 
   server.registerTool(

@@ -7,6 +7,7 @@ import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
+import { LiveGraphBuilderService } from "../services/liveGraphBuilderService.js";
 import { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
 import { LiveGraphAuthoringPlanService } from "../services/liveGraphAuthoringPlan.js";
 import { LiveGraphExperimentService } from "../services/liveGraphExperimentService.js";
@@ -42,6 +43,11 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     snapshotService: new SnapshotService(deps.ssh),
     pedalboardPlannerService: new PedalboardPlannerService(pluginService, pedalboardService),
     liveGraphAuthoringPlanService: new LiveGraphAuthoringPlanService(pluginService),
+    liveGraphBuilderService: new LiveGraphBuilderService(
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true,
+      deps.websocketUrl
+    ),
     liveGraphExperimentService: new LiveGraphExperimentService(
       pluginService,
       deps.writeHttp ?? null,

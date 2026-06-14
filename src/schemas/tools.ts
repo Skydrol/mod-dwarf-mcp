@@ -221,3 +221,74 @@ export const loadExistingPedalboardInputSchema = z
   .strict();
 
 export type LoadExistingPedalboardInput = z.infer<typeof loadExistingPedalboardInputSchema>;
+
+const liveGraphApiCallSchema = z
+  .object({
+    method: z.enum(["GET", "POST"]),
+    path: z.string().min(1),
+    purpose: z.string().min(1),
+    body: z.union([
+      z.object({ kind: z.literal("none") }).strict(),
+      z
+        .object({
+          kind: z.literal("json"),
+          value: z.unknown()
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("form"),
+          fields: z.record(z.union([z.string(), z.number(), z.boolean()]))
+        })
+        .strict()
+    ])
+  })
+  .passthrough();
+
+const liveGraphParameterPlanSchema = z
+  .object({
+    requestedKey: z.string().optional(),
+    symbol: z.string().min(1),
+    requestedRange: z.unknown().optional(),
+    resolvedRange: z.unknown().optional(),
+    value: z.number()
+  })
+  .passthrough();
+
+const liveGraphPluginPlanSchema = z
+  .object({
+    role: z.string().min(1),
+    name: z.string().min(1),
+    uri: z.string().min(1),
+    instance: z.string().min(1),
+    x: z.number(),
+    y: z.number(),
+    addCall: liveGraphApiCallSchema,
+    parameterPlans: z.array(liveGraphParameterPlanSchema),
+    connectCalls: z.array(liveGraphApiCallSchema)
+  })
+  .passthrough();
+
+export const liveGraphAuthoringPlanSchema = z
+  .object({
+    dryRun: z.literal(true),
+    title: z.string().min(1),
+    plugins: z.array(liveGraphPluginPlanSchema).min(1),
+    apiCalls: z.array(liveGraphApiCallSchema),
+    notes: z.array(z.string()),
+    unsupportedIdeas: z.array(z.string())
+  })
+  .passthrough();
+
+export type LiveGraphAuthoringPlanInput = z.infer<typeof liveGraphAuthoringPlanSchema>;
+
+export const runLiveGraphBuilderInputSchema = z
+  .object({
+    mode: z.enum(["dry_run", "apply_temporary"]),
+    confirm: z.boolean(),
+    restoreAfterSeconds: z.number().int().positive().optional(),
+    plan: liveGraphAuthoringPlanSchema
+  })
+  .strict();
+
+export type RunLiveGraphBuilderInput = z.infer<typeof runLiveGraphBuilderInputSchema>;

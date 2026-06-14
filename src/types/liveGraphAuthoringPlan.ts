@@ -4,7 +4,7 @@ export type LiveGraphApiMethod = "GET" | "POST";
 
 export type LiveGraphApiBody =
   | { kind: "none" }
-  | { kind: "json"; value: unknown }
+  | { kind: "json"; value?: unknown }
   | { kind: "form"; fields: Record<string, string | number | boolean> };
 
 export interface LiveGraphApiCall {
@@ -21,10 +21,10 @@ export interface LiveGraphPortRange {
 }
 
 export interface LiveGraphParameterPlan {
-  requestedKey: string;
+  requestedKey?: string;
   symbol: string;
-  requestedRange: LiveGraphPortRange;
-  resolvedRange: LiveGraphPortRange;
+  requestedRange?: unknown;
+  resolvedRange?: unknown;
   value: number;
 }
 
