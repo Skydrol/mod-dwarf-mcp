@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
+import { clearCurrentPedalboardTool } from "../tools/clearCurrentPedalboard.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
@@ -24,6 +25,19 @@ import {
 } from "../schemas/tools.js";
 
 export function registerTools(server: McpServer, context: ToolContext): void {
+  server.registerTool(
+    "clear_current_pedalboard",
+    {
+      title: "Clear the currently loaded pedalboard",
+      description:
+        "Write-gated MOD UI API clear step. Requires MOD_DWARF_ENABLE_WRITE_TOOLS=true and confirm=true. Removes every plugin currently present in the loaded board using /effect/remove and does not call disconnect, save, or load endpoints.",
+      inputSchema: {
+        confirm: z.literal(true)
+      }
+    },
+    async (input) => clearCurrentPedalboardTool(input, context)
+  );
+
   server.registerTool(
     "get_device_info",
     {

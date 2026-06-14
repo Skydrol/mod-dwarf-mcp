@@ -7,6 +7,7 @@ import { pluginCatalog } from "../data/pluginCatalog.js";
 import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
+import { ClearCurrentPedalboardService } from "../services/clearCurrentPedalboardService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
 import { LiveGraphBuilderService } from "../services/liveGraphBuilderService.js";
 import { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
@@ -60,6 +61,10 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       deps.websocketUrl
     ),
     dryBundleService: new DryBundleService(pluginService),
+    clearCurrentPedalboardService: new ClearCurrentPedalboardService(
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true
+    ),
     importBundleService: new ImportBundleService(
       pedalboardService,
       deps.writeHttp ?? null,
