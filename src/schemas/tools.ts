@@ -230,6 +230,15 @@ export const clearCurrentPedalboardInputSchema = z
 
 export type ClearCurrentPedalboardInput = z.infer<typeof clearCurrentPedalboardInputSchema>;
 
+export const createNewPedalboardInputSchema = z
+  .object({
+    title: z.string().min(1),
+    confirm: z.boolean()
+  })
+  .strict();
+
+export type CreateNewPedalboardInput = z.infer<typeof createNewPedalboardInputSchema>;
+
 const liveGraphApiCallSchema = z
   .object({
     method: z.enum(["GET", "POST"]),

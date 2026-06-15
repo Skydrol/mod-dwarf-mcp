@@ -8,6 +8,7 @@ import { BankService } from "../services/bankService.js";
 import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
 import { ClearCurrentPedalboardService } from "../services/clearCurrentPedalboardService.js";
+import { CreateNewPedalboardService } from "../services/createNewPedalboardService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
 import { LiveGraphBuilderService } from "../services/liveGraphBuilderService.js";
 import { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
@@ -62,6 +63,10 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     ),
     dryBundleService: new DryBundleService(pluginService),
     clearCurrentPedalboardService: new ClearCurrentPedalboardService(
+      deps.writeHttp ?? null,
+      deps.writeToolsEnabled === true
+    ),
+    createNewPedalboardService: new CreateNewPedalboardService(
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true
     ),

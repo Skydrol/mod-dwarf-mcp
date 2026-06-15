@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
+import { createNewPedalboardTool } from "../tools/createNewPedalboard.js";
 import { clearCurrentPedalboardTool } from "../tools/clearCurrentPedalboard.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
@@ -25,6 +26,20 @@ import {
 } from "../schemas/tools.js";
 
 export function registerTools(server: McpServer, context: ToolContext): void {
+  server.registerTool(
+    "create_new_pedalboard",
+    {
+      title: "Create a new empty pedalboard",
+      description:
+        "Write-gated quick path for a fresh empty pedalboard. Calls POST /reset first, then POST /pedalboard/save with asNew=1. It does not load the default board or call /banks/save.",
+      inputSchema: {
+        title: z.string().min(1),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => createNewPedalboardTool(input, context)
+  );
+
   server.registerTool(
     "clear_current_pedalboard",
     {
