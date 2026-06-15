@@ -29,13 +29,12 @@ export class DeviceInventoryService {
 
     const uriList = lines(pluginUris.stdout);
     const nameList = lines(pluginNames.stdout);
-    const plugins = await Promise.all(
-      uriList.map(async (uri, index) => {
-        const name = nameList[index] ?? uri;
-        const info = await this.readPluginInfo(uri);
-        return buildPluginRecord(uri, name, info, null);
-      })
-    );
+    const plugins: DeviceInventoryPlugin[] = [];
+    for (const [index, uri] of uriList.entries()) {
+      const name = nameList[index] ?? uri;
+      const info = await this.readPluginInfo(uri);
+      plugins.push(buildPluginRecord(uri, name, info, null));
+    }
 
     const sortedPlugins = plugins.sort((left, right) => {
       const byName = left.name.localeCompare(right.name);
@@ -80,9 +79,13 @@ export class DeviceInventoryService {
       unit?: string;
     }>;
   } | null> {
-    const result = await this.ssh.exec(`lv2info ${shellQuote(uri)}`);
-    if (result.code !== 0) return null;
-    return parseLv2InfoPorts(result.stdout, uri);
+    try {
+      const result = await this.ssh.exec(`lv2info ${shellQuote(uri)}`);
+      if (result.code !== 0) return null;
+      return parseLv2InfoPorts(result.stdout, uri);
+    } catch {
+      return null;
+    }
   }
 }
 
