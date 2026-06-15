@@ -7,6 +7,7 @@ import type { LiveGraphConnectionExperimentService } from "../services/liveGraph
 import type { LiveGraphExperimentService } from "../services/liveGraphExperimentService.js";
 import type { ClearCurrentPedalboardService } from "../services/clearCurrentPedalboardService.js";
 import type { CreateNewPedalboardService } from "../services/createNewPedalboardService.js";
+import type { DeviceInventoryService } from "../services/deviceInventoryService.js";
 import type { ImportBundleService } from "../services/importBundleService.js";
 import type { LoadExistingPedalboardService } from "../services/loadExistingPedalboardService.js";
 import type { PedalboardService } from "../services/pedalboardService.js";
@@ -29,6 +30,7 @@ export interface ToolContext {
   dryBundleService: DryBundleService;
   clearCurrentPedalboardService: ClearCurrentPedalboardService;
   createNewPedalboardService: CreateNewPedalboardService;
+  deviceInventoryService: DeviceInventoryService;
   importBundleService: ImportBundleService;
   saveLoadedPedalboardService: SaveLoadedPedalboardService;
   loadExistingPedalboardService: LoadExistingPedalboardService;

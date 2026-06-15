@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPedalboardDryBundleTool } from "../tools/createPedalboardDryBundle.js";
 import { createNewPedalboardTool } from "../tools/createNewPedalboard.js";
 import { clearCurrentPedalboardTool } from "../tools/clearCurrentPedalboard.js";
+import { refreshDeviceInventoryTool } from "../tools/refreshDeviceInventory.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
@@ -38,6 +39,17 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createNewPedalboardTool(input, context)
+  );
+
+  server.registerTool(
+    "refresh_device_inventory",
+    {
+      title: "Refresh device inventory",
+      description:
+        "Scan the connected MOD Dwarf for device info and installed plugin metadata, regenerate data/deviceInventory.json, and return a summary. No planning, recommendations, or musical enrichment.",
+      inputSchema: {}
+    },
+    async (input) => refreshDeviceInventoryTool(input, context)
   );
 
   server.registerTool(

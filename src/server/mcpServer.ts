@@ -9,6 +9,7 @@ import { DeviceService } from "../services/deviceService.js";
 import { DryBundleService } from "../services/dryBundleService.js";
 import { ClearCurrentPedalboardService } from "../services/clearCurrentPedalboardService.js";
 import { CreateNewPedalboardService } from "../services/createNewPedalboardService.js";
+import { DeviceInventoryService } from "../services/deviceInventoryService.js";
 import { ImportBundleService } from "../services/importBundleService.js";
 import { LiveGraphBuilderService } from "../services/liveGraphBuilderService.js";
 import { LiveGraphConnectionExperimentService } from "../services/liveGraphConnectionExperimentService.js";
@@ -70,6 +71,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true
     ),
+    deviceInventoryService: new DeviceInventoryService(deps.ssh),
     importBundleService: new ImportBundleService(
       pedalboardService,
       deps.writeHttp ?? null,
