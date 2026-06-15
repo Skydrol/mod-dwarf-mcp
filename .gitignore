@@ -4,3 +4,4 @@ coverage/
 .env
 *.log
 final_reports/
+data/deviceInventory.json
