@@ -21,6 +21,7 @@ describe("PedalboardPlannerService", () => {
     });
 
     expect(plan.dryRun).toBe(true);
+    expect(plan.operationMode).toBe("replace_current_board");
     expect(plan.safety).toEqual({
       writesFiles: false,
       modifiesDevice: false,
@@ -62,6 +63,32 @@ describe("PedalboardPlannerService", () => {
       "Bridge Collapse",
       "Lead Lift"
     ]);
+  });
+
+  it("decides a new board mode for explicit creation requests", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "ambient",
+      instrument: "guitar",
+      goals: ["create a new pedalboard", "make a fresh patch"]
+    });
+
+    expect(plan.operationMode).toBe("new_board");
+  });
+
+  it("decides parameter-only mode for knob tweak requests", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "ambient",
+      instrument: "guitar",
+      goals: ["just change parameters", "keep the same chain"]
+    });
+
+    expect(plan.operationMode).toBe("parameter_only");
   });
 
   it("builds a valid high-gain board without generic cab guesses", async () => {

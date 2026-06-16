@@ -1,6 +1,7 @@
 import type {
   PedalboardPlan,
   PedalboardPlanInput,
+  PedalboardOperationMode,
   PlannedPlugin,
   PlannedSnapshot
 } from "../types/plan.js";
@@ -28,6 +29,8 @@ export class PedalboardPlannerService {
   ) {}
 
   async planFromPrompt(input: PedalboardPlanInput): Promise<PedalboardPlan> {
+    const promptText = promptTextFor(input);
+    const operationMode = this.decideOperationMode(promptText);
     const pluginList = await this.pluginService.listPlugins("both");
     const plugins = pluginList.plugins.map((plugin) => ({
       name: plugin.name ?? plugin.uri ?? "",
@@ -36,7 +39,6 @@ export class PedalboardPlannerService {
     const roles = this.rolesFor(input);
     const unsupportedIdeas: string[] = [];
     const profileWarnings: string[] = [];
-    const promptText = promptTextFor(input);
 
     const resolved = await Promise.all(
       roles.map(async (role, index) => {
@@ -75,6 +77,7 @@ export class PedalboardPlannerService {
 
     const basePlan: PedalboardPlan = {
       dryRun: true,
+      operationMode,
       safety: {
         writesFiles: false,
         modifiesDevice: false,
@@ -115,6 +118,39 @@ export class PedalboardPlannerService {
       ...safety.adjustedPlan,
       notes: [...basePlan.notes, ...safetyNotes]
     };
+  }
+
+  private decideOperationMode(promptText: string): PedalboardOperationMode {
+    const text = promptText.toLowerCase();
+
+    if (matches(text, ["parameter only", "just change parameters", "change parameters only"])) {
+      return "parameter_only";
+    }
+
+    if (matches(text, ["modify current board", "keep current board", "adjust current board"])) {
+      return "modify_current_board";
+    }
+
+    if (matches(text, ["replace current board", "replace the current board", "start over"])) {
+      return "replace_current_board";
+    }
+
+    if (matches(text, [
+      "new board",
+      "new pedalboard",
+      "create a board",
+      "create pedalboard",
+      "build a board",
+      "build pedalboard"
+    ])) {
+      return "new_board";
+    }
+
+    if (matches(text, ["add ", "add a ", "add an ", "insert ", "append ", "include "])) {
+      return "modify_current_board";
+    }
+
+    return "replace_current_board";
   }
 
   private rolesFor(input: PedalboardPlanInput): RoleSpec[] {

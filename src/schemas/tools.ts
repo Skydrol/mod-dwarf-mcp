@@ -72,6 +72,12 @@ const plannedSnapshotSchema = z
 export const pedalboardPlanSchema = z
   .object({
     dryRun: z.literal(true),
+    operationMode: z.enum([
+      "new_board",
+      "replace_current_board",
+      "modify_current_board",
+      "parameter_only"
+    ]),
     safety: z
       .object({
         writesFiles: z.literal(false),

@@ -5,6 +5,12 @@ export interface PedalboardPlanInput {
   referenceArtists?: string[];
 }
 
+export type PedalboardOperationMode =
+  | "new_board"
+  | "replace_current_board"
+  | "modify_current_board"
+  | "parameter_only";
+
 export interface PlannedPlugin {
   role: string;
   name: string;
@@ -22,6 +28,7 @@ export interface PlannedSnapshot {
 
 export interface PedalboardPlan {
   dryRun: true;
+  operationMode: PedalboardOperationMode;
   safety: {
     writesFiles: false;
     modifiesDevice: false;
