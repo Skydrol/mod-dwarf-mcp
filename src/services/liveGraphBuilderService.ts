@@ -57,11 +57,7 @@ export class LiveGraphBuilderService {
     const operationMode = extractOperationMode(input.plan.sourcePlan);
 
     if (operationMode === "parameter_only") {
-      return this.unsupportedResult(
-        input,
-        restoreAfterSeconds,
-        "parameter_only mode is not supported by LiveGraphBuilderService v1 because it does not change the graph topology."
-      );
+      return this.runParameterOnly(input, restoreAfterSeconds);
     }
 
     const planAnalysis = this.analyzePlan(input.plan);
@@ -409,6 +405,89 @@ export class LiveGraphBuilderService {
       }
       await monitor.close();
     }
+  }
+
+  private async runParameterOnly(input: {
+    mode: "dry_run" | "apply_temporary";
+    confirm: boolean;
+    restoreAfterSeconds?: number;
+    plan: LiveGraphBuilderPlan;
+  }, restoreAfterSeconds: number): Promise<LiveGraphBuilderResult> {
+    const supportedTopology: "linear_chain_v1" = SUPPORT_NAME;
+    const planAnalysis = this.analyzePlan(input.plan);
+    if (!planAnalysis.supported) {
+      return this.unsupportedResult(input, restoreAfterSeconds, planAnalysis.reason);
+    }
+
+    const parameterOnlyCalls = [...planAnalysis.parameterCalls];
+    if (input.mode === "dry_run") {
+      return {
+        dryRun: true,
+        mode: input.mode,
+        confirmed: input.confirm,
+        restoreAfterSeconds,
+        supportedTopology,
+        plan: input.plan,
+        websocket: emptyWebsocketState(this.websocketUrl),
+        apiCalls: parameterOnlyCalls.map((call) => ({
+          method: call.method,
+          path: call.path,
+          purpose: call.purpose,
+          status: "success" as const,
+          httpStatus: 200
+        })),
+        success: true,
+        unexpectedBehavior: [],
+        notes: [
+          "Parameter-only dry-run; no topology changes were planned.",
+          "Only /effect/parameter/set/ calls were included."
+        ]
+      };
+    }
+
+    if (!input.confirm) {
+      return this.notAttempted(input, restoreAfterSeconds, "Tool input must include confirm=true.");
+    }
+    if (!this.writeToolsEnabled || !this.writeApi) {
+      return this.notAttempted(
+        input,
+        restoreAfterSeconds,
+        "Write tools are disabled. Set MOD_DWARF_ENABLE_WRITE_TOOLS=true and pass confirm=true."
+      );
+    }
+
+    const apiCalls: ApiCallRecord[] = [];
+    const unexpectedBehavior: string[] = [];
+
+    for (const call of parameterOnlyCalls) {
+      const payload = parseParameterPayload(call.body);
+      if (!payload) {
+        unexpectedBehavior.push(`Parameter call missing instance/symbol/value: ${call.path}`);
+        continue;
+      }
+      const response = await this.writeApi.postJson(call.path, payload.body, call.purpose);
+      apiCalls.push(recordCall("POST", call.path, call.purpose, response));
+      if (!response.ok) {
+        unexpectedBehavior.push(`Parameter set failed: ${call.path} -> HTTP ${response.status}`);
+      }
+    }
+
+    return {
+      dryRun: false,
+      mode: input.mode,
+      confirmed: true,
+      restoreAfterSeconds,
+      supportedTopology,
+      plan: input.plan,
+      websocket: emptyWebsocketState(this.websocketUrl),
+      apiCalls,
+      success: unexpectedBehavior.length === 0,
+      unexpectedBehavior,
+      notes: [
+        "Parameter-only execution applied /effect/parameter/set/ calls only.",
+        "No add, connect, remove, reset, save, or snapshot operations were attempted."
+      ]
+    };
   }
 
   private dryRunResult(
