@@ -54,6 +54,15 @@ export class LiveGraphBuilderService {
   }): Promise<LiveGraphBuilderResult> {
     const restoreAfterSeconds = input.restoreAfterSeconds ?? DEFAULT_RESTORE_AFTER_SECONDS;
     const supportedTopology: "linear_chain_v1" = SUPPORT_NAME;
+    const operationMode = extractOperationMode(input.plan.sourcePlan);
+
+    if (operationMode === "parameter_only") {
+      return this.unsupportedResult(
+        input,
+        restoreAfterSeconds,
+        "parameter_only mode is not supported by LiveGraphBuilderService v1 because it does not change the graph topology."
+      );
+    }
 
     const planAnalysis = this.analyzePlan(input.plan);
     if (!planAnalysis.supported) {
@@ -103,6 +112,32 @@ export class LiveGraphBuilderService {
     let afterRollback = baseline;
 
     try {
+      if (operationMode === "new_board" || operationMode === "replace_current_board") {
+        const resetResponse = await this.writeApi.getBytes(
+          "/reset",
+          `prepare ${operationMode.replace(/_/g, " ")} before temporary live graph apply`
+        );
+        apiCalls.push(
+          recordCall(
+            "GET",
+            "/reset",
+            `prepare ${operationMode.replace(/_/g, " ")} before temporary live graph apply`,
+            resetResponse
+          )
+        );
+        if (!resetResponse.ok) {
+          return this.failEarly(
+            input,
+            restoreAfterSeconds,
+            supportedTopology,
+            apiCalls,
+            `Reset failed before live graph apply: HTTP ${resetResponse.status}`,
+            monitor
+          );
+        }
+        await monitor.waitFor((raw) => raw.startsWith("loading_end"), 5000).catch(() => null);
+      }
+
       for (const edge of baselineDisconnects) {
         const path = this.disconnectPath(edge.source, edge.target);
         const response = await this.writeApi.getBytes(
@@ -459,6 +494,45 @@ export class LiveGraphBuilderService {
     };
   }
 
+  private failEarly(
+    input: {
+      mode: "dry_run" | "apply_temporary";
+      confirm: boolean;
+      restoreAfterSeconds?: number;
+      plan: LiveGraphBuilderPlan;
+    },
+    restoreAfterSeconds: number,
+    supportedTopology: "linear_chain_v1",
+    apiCalls: ApiCallRecord[],
+    error: string,
+    monitor: LiveGraphWebsocketMonitor
+  ): LiveGraphBuilderResult {
+    return {
+      dryRun: input.mode === "dry_run",
+      mode: input.mode,
+      confirmed: input.confirm,
+      restoreAfterSeconds,
+      supportedTopology,
+      plan: input.plan,
+      websocket: buildWebsocketState(
+        this.websocketUrl,
+        monitor.rawMessages(),
+        monitor.snapshot(),
+        monitor.snapshot(),
+        monitor.snapshot(),
+        monitor.snapshot(),
+        monitor.snapshot(),
+        monitor.snapshot(),
+        [],
+        []
+      ),
+      apiCalls,
+      success: false,
+      unexpectedBehavior: [error],
+      notes: ["Live graph apply aborted before any graph changes were made."]
+    };
+  }
+
   private notAttempted(
     input: {
       mode: "dry_run" | "apply_temporary";
@@ -642,6 +716,20 @@ function parseParameterJsonString(value: string): {
   const numeric = Number(rest.join("/"));
   if (!instance || !symbol || !Number.isFinite(numeric)) return null;
   return { instance, symbol, value: numeric };
+}
+
+function extractOperationMode(sourcePlan: unknown): "new_board" | "replace_current_board" | "modify_current_board" | "parameter_only" | null {
+  if (!sourcePlan || typeof sourcePlan !== "object") return null;
+  const mode = (sourcePlan as { operationMode?: unknown }).operationMode;
+  if (
+    mode === "new_board" ||
+    mode === "replace_current_board" ||
+    mode === "modify_current_board" ||
+    mode === "parameter_only"
+  ) {
+    return mode;
+  }
+  return null;
 }
 
 function emptyWebsocketState(url: string): LiveGraphBuilderWebsocketState {
