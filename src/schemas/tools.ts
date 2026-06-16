@@ -219,6 +219,16 @@ export const saveLoadedPedalboardAsNewInputSchema = z
 
 export type SaveLoadedPedalboardAsNewInput = z.infer<typeof saveLoadedPedalboardAsNewInputSchema>;
 
+export const executePedalboardPlanInputSchema = z
+  .object({
+    plan: pedalboardPlanSchema,
+    confirm: z.boolean(),
+    title: z.string().min(1).optional()
+  })
+  .strict();
+
+export type ExecutePedalboardPlanInput = z.infer<typeof executePedalboardPlanInputSchema>;
+
 export const loadExistingPedalboardInputSchema = z
   .object({
     bundlePath: z.string().min(1),

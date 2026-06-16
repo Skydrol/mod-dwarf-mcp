@@ -9,6 +9,7 @@ import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderF
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
 import { runLiveGraphExperimentTool } from "../tools/runLiveGraphExperiment.js";
+import { executePedalboardPlanTool } from "../tools/executePedalboardPlan.js";
 import { getDeviceInfoTool } from "../tools/getDeviceInfo.js";
 import { importPedalboardDryBundleTool } from "../tools/importPedalboardDryBundle.js";
 import { inspectPedalboardTool } from "../tools/inspectPedalboard.js";
@@ -253,6 +254,21 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => runLiveGraphBuilderFromPromptTool(input, context)
+  );
+
+  server.registerTool(
+    "execute_pedalboard_plan",
+    {
+      title: "Execute a pedalboard plan end-to-end",
+      description:
+        "Write-gated end-to-end executor: apply a planner-generated pedalboard plan over HTTP, then save and reload the result as a new pedalboard. Uses only MOD endpoints for write operations.",
+      inputSchema: {
+        plan: pedalboardPlanSchema,
+        confirm: z.boolean(),
+        title: z.string().min(1).optional()
+      }
+    },
+    async (input) => executePedalboardPlanTool(input, context)
   );
 
   server.registerTool(

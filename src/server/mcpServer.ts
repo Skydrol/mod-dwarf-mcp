@@ -20,8 +20,10 @@ import { PedalboardService } from "../services/pedalboardService.js";
 import { PluginService } from "../services/pluginService.js";
 import { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
 import { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
+import { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
 import { SnapshotService } from "../services/snapshotService.js";
 import { registerTools } from "./toolRegistry.js";
+import type { ToolContext } from "../tools/toolContext.js";
 
 export interface ServerDependencies {
   ssh: CommandRunner;
@@ -39,7 +41,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
 
   const pluginService = new PluginService(null, pluginCatalog);
   const pedalboardService = new PedalboardService(deps.ssh);
-  const context = {
+  const context: ToolContext = {
     deviceService: new DeviceService(deps.ssh),
     pluginService,
     pedalboardService,
@@ -86,8 +88,17 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       pedalboardService,
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true
-    )
+    ),
+    executePedalboardPlanService: undefined as unknown as ExecutePedalboardPlanService
   };
+
+  context.executePedalboardPlanService = new ExecutePedalboardPlanService(
+    context.liveGraphAuthoringPlanService,
+    context.saveLoadedPedalboardService,
+    context.loadExistingPedalboardService,
+    deps.writeHttp ?? null,
+    deps.writeToolsEnabled === true
+  );
 
   void deps.http;
   registerTools(server, context);

@@ -15,6 +15,7 @@ import type { PluginService } from "../services/pluginService.js";
 import type { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
 import type { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
 import type { SnapshotService } from "../services/snapshotService.js";
+import type { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
 
 export interface ToolContext {
   deviceService: DeviceService;
@@ -34,6 +35,7 @@ export interface ToolContext {
   importBundleService: ImportBundleService;
   saveLoadedPedalboardService: SaveLoadedPedalboardService;
   loadExistingPedalboardService: LoadExistingPedalboardService;
+  executePedalboardPlanService: ExecutePedalboardPlanService;
 }
 
 export function jsonContent(value: unknown) {
