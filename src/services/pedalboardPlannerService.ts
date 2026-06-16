@@ -168,6 +168,23 @@ export class PedalboardPlannerService {
     ]);
     const roles: RoleSpec[] = [];
 
+    if (isSmellsLikeTeenSpirit) {
+      return [
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "Distortion", "Big Muff", "ChowCentaur"],
+          reason: "Primary Nirvana-style distortion with the closest installed substitute first.",
+          requiresProfile: true
+        },
+        {
+          role: "modulation",
+          preferred: ["CS Chorus 1", "TAP Chorus/Flanger", "Calf Flanger", "GxFlanger"],
+          reason: "Small Clone-style chorus approximation for Smells Like Teen Spirit.",
+          requiresProfile: true
+        }
+      ];
+    }
+
     roles.push({
       role: "input gain",
       preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
@@ -192,13 +209,6 @@ export class PedalboardPlannerService {
       roles.push(cabinetRole());
     } else if (isLetItHappenBoard) {
       // Let It Happen works best as a single-gain, effects-forward chain.
-    } else if (isSmellsLikeTeenSpirit) {
-      roles.push({
-        role: "grunge drive",
-        preferred: ["DS1", "Big Muff", "DT-1", "Distortion", "ChowCentaur"],
-        reason: "Main Nirvana-style distortion, using the closest installed drive when DS-1 is unavailable.",
-        requiresProfile: true
-      });
     } else if (matches(text, ["clean", "ambient", "jazz", "post rock", "shoegaze", "funk"])) {
       roles.push({
         role: "clean tone shaper",
@@ -229,15 +239,6 @@ export class PedalboardPlannerService {
         role: "modulation",
         preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
         reason: "Adds width and movement requested by the prompt.",
-        requiresProfile: true
-      });
-    }
-
-    if (isSmellsLikeTeenSpirit) {
-      roles.push({
-        role: "modulation",
-        preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
-        reason: "Small Clone-style chorus approximation for Smells Like Teen Spirit.",
         requiresProfile: true
       });
     }
@@ -302,29 +303,11 @@ export class PedalboardPlannerService {
     }
 
     roles.push({
-      role: "output level",
+      role: "output trim",
       preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
       reason: "Final trim before hardware outputs.",
       requiresProfile: true
     });
-
-    if (isSmellsLikeTeenSpirit) {
-      return dedupeRoles(
-        roles.filter(
-          (role) =>
-            role.role !== "input gain" &&
-            role.role !== "output level" &&
-            role.role !== "clean tone shaper"
-        )
-      ).concat([
-        {
-          role: "output level",
-          preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
-          reason: "Final trim before hardware outputs.",
-          requiresProfile: true
-        }
-      ]);
-    }
 
     return dedupeRoles(roles);
   }

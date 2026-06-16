@@ -4,6 +4,27 @@ MCP server for the MOD Dwarf pedalboard platform.
 
 The server inspects a MOD Dwarf over SSH and HTTP. It is primarily a read-only inspection tool, but includes write-gated, opt-in tools for pedalboard generation and management that are disabled by default. For prompt-driven creation, `create_pedalboard_from_prompt` is the recommended entry point.
 
+## How To Use
+
+### First Connection
+
+On first use with a connected MOD Dwarf:
+
+1. Call `get_device_info`.
+2. Call `list_plugins`.
+3. Treat the discovered plugins as the source of truth for what is physically installed.
+4. Optionally call `refresh_device_inventory` to write the local inventory files for reuse in the session.
+
+### Prompt-Driven Creation
+
+For a user prompt like "Smells Like Teen Spirit":
+
+1. Discover installed plugins first.
+2. Decide the effect list and snapshots explicitly.
+3. Use `create_pedalboard_from_prompt` to build and save the board.
+
+The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
+
 ## Features
 
 - `get_device_info`: firmware, OS, kernel, plugin counts, pedalboard counts
@@ -17,6 +38,7 @@ The server inspects a MOD Dwarf over SSH and HTTP. It is primarily a read-only i
 - `create_pedalboard_from_prompt`: end-to-end prompt execution path that generates, imports, saves, and reports
 - `execute_pedalboard_plan`: lower-level end-to-end executor for an already planned board
 - `create_new_pedalboard`: write-gated quick path that resets the active board and saves it as a new empty pedalboard
+- `refresh_device_inventory`: first-connection inventory scan that writes the local inventory files
 - `import_pedalboard_dry_bundle`: write-gated MOD UI API import/load for a generated dry bundle; disabled by default
 - `save_loaded_pedalboard_as_new`: write-gated persistent save of the currently loaded pedalboard using `/pedalboard/save` with `asNew=1`
 - `load_existing_pedalboard`: write-gated load of an existing saved bundle using `/pedalboard/load_bundle/`; does not save or call `/banks/save`

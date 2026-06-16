@@ -188,7 +188,7 @@ function matchesAny(value: string, needles: string[]): boolean {
 
 function isGainLike(normalized: string, unit?: string): boolean {
   if (unit && normalize(unit).includes("db")) return true;
-  return matchesAny(normalized, ["gain", "volume", "master", "output", "trim"]);
+  return matchesAny(normalized, ["gain", "volume", "master", "output level"]);
 }
 
 function isDelayFeedback(normalized: string): boolean {
