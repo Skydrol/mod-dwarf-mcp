@@ -9,13 +9,19 @@ import { MockRunner } from "./mockRunner.js";
 describe("DeviceInventoryService", () => {
   it("generates a sorted inventory and writes it to disk", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mod-dwarf-inventory-"));
-    const service = new DeviceInventoryService(new MockRunner(), join(outputDir, "inventory.json"));
+    const service = new DeviceInventoryService(
+      new MockRunner(),
+      join(outputDir, "inventory.json"),
+      join(outputDir, "pluginKnowledgeDb.json")
+    );
 
     const result = await service.refresh();
 
     expect(result.pluginCount).toBe(2);
     expect(result.newInventoryWritten).toBe(true);
     expect(result.inventoryPath).toBe(join(outputDir, "inventory.json"));
+    expect(result.knowledgeDbWritten).toBe(true);
+    expect(result.knowledgeDbPath).toBe(join(outputDir, "pluginKnowledgeDb.json"));
 
     const raw = await readFile(join(outputDir, "inventory.json"), "utf8");
     const parsed = JSON.parse(raw) as {
@@ -26,7 +32,7 @@ describe("DeviceInventoryService", () => {
         uri: string;
         audioInputs: number;
         audioOutputs: number;
-        controlPorts: Array<{ symbol: string }>;
+        controlPorts: Array<{ symbol: string; direction: string }>;
       }>;
     };
 
@@ -37,12 +43,32 @@ describe("DeviceInventoryService", () => {
     expect(parsed.plugins[0].audioInputs).toBe(1);
     expect(parsed.plugins[0].audioOutputs).toBe(1);
     expect(parsed.plugins[0].controlPorts[0]).toMatchObject({ symbol: "Gain", name: "Gain" });
+
+    const knowledgeRaw = await readFile(join(outputDir, "pluginKnowledgeDb.json"), "utf8");
+    const knowledge = JSON.parse(knowledgeRaw) as {
+      generatedAt: string;
+      version: number;
+      plugins: Array<{
+        name: string;
+        summary: { purpose: string; useWhen: string; differsFrom: string };
+        roles: string[];
+        warnings: string[];
+      }>;
+    };
+    expect(knowledge.version).toBe(1);
+    expect(knowledge.plugins.map((plugin) => plugin.name)).toEqual(["Gain", "MVerb"]);
+    expect(knowledge.plugins[0].summary.purpose.length).toBeGreaterThan(0);
+    expect(knowledge.plugins[0].roles.length).toBeGreaterThan(0);
   });
 
   it("handles an empty plugin list", async () => {
     const runner = new EmptyPluginRunner();
     const outputDir = await mkdtemp(join(tmpdir(), "mod-dwarf-inventory-empty-"));
-    const service = new DeviceInventoryService(runner, join(outputDir, "inventory.json"));
+    const service = new DeviceInventoryService(
+      runner,
+      join(outputDir, "inventory.json"),
+      join(outputDir, "pluginKnowledgeDb.json")
+    );
 
     const result = await service.refresh();
 
@@ -54,7 +80,11 @@ describe("DeviceInventoryService", () => {
 
   it("keeps control port extraction stable", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mod-dwarf-inventory-ports-"));
-    const service = new DeviceInventoryService(new MockRunner(), join(outputDir, "inventory.json"));
+    const service = new DeviceInventoryService(
+      new MockRunner(),
+      join(outputDir, "inventory.json"),
+      join(outputDir, "pluginKnowledgeDb.json")
+    );
     const result = await service.refresh();
     const raw = await readFile(join(outputDir, "inventory.json"), "utf8");
     const parsed = JSON.parse(raw) as {
@@ -67,6 +97,7 @@ describe("DeviceInventoryService", () => {
           maximum: number | null;
           default: number | null;
           unit: string | null;
+          direction: string;
         }>;
       }>;
     };
@@ -77,7 +108,8 @@ describe("DeviceInventoryService", () => {
       minimum: -40,
       maximum: 40,
       default: null,
-      unit: null
+      unit: null,
+      direction: "input"
     });
     expect(result.pluginCount).toBeGreaterThan(0);
   });

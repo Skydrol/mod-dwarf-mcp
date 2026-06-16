@@ -24,4 +24,5 @@ export interface DeviceInventoryControlPort {
   maximum: number | null;
   default: number | null;
   unit: string | null;
+  direction: "input" | "output" | "unknown";
 }
