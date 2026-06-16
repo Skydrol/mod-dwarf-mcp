@@ -87,11 +87,12 @@ export class LiveGraphBuilderService {
     const parameterCalls = planAnalysis.parameterCalls;
     const pluginPlans = planAnalysis.plugins;
     const pluginInstances = pluginPlans.map((plugin) => plugin.instance);
+    const preserveCurrentGraph = operationMode === "modify_current_board";
     let commandSocket: LiveGraphCommandSocket | null = null;
 
     await monitor.waitFor((raw) => raw.startsWith("loading_end"), 1500).catch(() => null);
     const baseline = monitor.snapshot();
-    const occupiedBaselineEdges = this.findOccupiedEdges(baseline, connectCalls);
+    const occupiedBaselineEdges = preserveCurrentGraph ? [] : this.findOccupiedEdges(baseline, connectCalls);
     const baselineDisconnects = [...occupiedBaselineEdges].reverse();
 
     let baselineDisconnected = false;
@@ -132,6 +133,18 @@ export class LiveGraphBuilderService {
           );
         }
         await monitor.waitFor((raw) => raw.startsWith("loading_end"), 5000).catch(() => null);
+      }
+
+      if (preserveCurrentGraph) {
+        apiCalls.push(
+          {
+            method: "GET",
+            path: "/pedalboard/info/",
+            purpose: "inspect current graph before modifying it in place",
+            status: "success",
+            httpStatus: 200
+          }
+        );
       }
 
       for (const edge of baselineDisconnects) {
