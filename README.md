@@ -14,6 +14,7 @@ The server inspects a MOD Dwarf over SSH and HTTP. It is primarily a read-only i
 - `list_snapshots`: snapshots for one pedalboard
 - `plan_pedalboard_from_prompt`: dry-run pedalboard plan using installed plugins only
 - `create_pedalboard_dry_bundle`: generate a local temporary LV2 pedalboard bundle from a plan; uploads nothing
+- `create_pedalboard_from_prompt`: end-to-end prompt execution path that generates, imports, saves, and reports
 - `create_new_pedalboard`: write-gated quick path that resets the active board and saves it as a new empty pedalboard
 - `import_pedalboard_dry_bundle`: write-gated MOD UI API import/load for a generated dry bundle; disabled by default
 - `save_loaded_pedalboard_as_new`: write-gated persistent save of the currently loaded pedalboard using `/pedalboard/save` with `asNew=1`
@@ -147,6 +148,38 @@ Dry-run only. This tool inspects installed plugins and existing pedalboards, the
   "instrument": "guitar",
   "goals": ["wide stereo reverb", "simple gain staging", "delay for lead lines"],
   "referenceArtists": ["Brian Eno", "The Edge"]
+}
+```
+
+### create_pedalboard_from_prompt
+
+Recommended end-to-end path for prompt-driven board creation. It builds a plan, generates a bundle with snapshots, imports it through MOD HTTP endpoints, saves it as a new pedalboard, and writes a final report under `final_reports/`.
+
+```json
+{
+  "plan": {
+    "dryRun": true,
+    "operationMode": "replace_current_board",
+    "safety": {
+      "writesFiles": false,
+      "modifiesDevice": false,
+      "callsPostEndpoints": false
+    },
+    "request": {
+      "style": "Smells Like Teen Spirit",
+      "instrument": "guitar",
+      "goals": ["Nirvana tone", "verse chorus snapshots", "grunge crunch"],
+      "referenceArtists": ["Nirvana"]
+    },
+    "template": null,
+    "availablePluginCount": 265,
+    "signalChain": [],
+    "snapshots": [],
+    "notes": [],
+    "unsupportedIdeas": []
+  },
+  "confirm": true,
+  "title": "TeenSpiritFinal"
 }
 ```
 

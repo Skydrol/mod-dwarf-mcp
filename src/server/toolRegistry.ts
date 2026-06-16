@@ -5,6 +5,7 @@ import { createNewPedalboardTool } from "../tools/createNewPedalboard.js";
 import { clearCurrentPedalboardTool } from "../tools/clearCurrentPedalboard.js";
 import { refreshDeviceInventoryTool } from "../tools/refreshDeviceInventory.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
+import { createPedalboardFromPromptTool } from "../tools/createPedalboardFromPrompt.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -269,6 +270,21 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => executePedalboardPlanTool(input, context)
+  );
+
+  server.registerTool(
+    "create_pedalboard_from_prompt",
+    {
+      title: "Create a pedalboard from a prompt",
+      description:
+        "End-to-end execution path: build a pedalboard plan from the prompt, import the generated bundle via HTTP, save it as a new pedalboard, and emit a final report.",
+      inputSchema: {
+        plan: pedalboardPlanSchema,
+        confirm: z.boolean(),
+        title: z.string().min(1).optional()
+      }
+    },
+    async (input) => createPedalboardFromPromptTool(input, context)
   );
 
   server.registerTool(

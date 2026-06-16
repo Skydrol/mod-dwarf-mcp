@@ -18,6 +18,7 @@ export class SaveLoadedPedalboardService {
     confirm: boolean;
     expectedPluginUris?: string[];
     loadedBundlePath?: string;
+    inspectSavedBundle?: boolean;
   }): Promise<SaveLoadedPedalboardResult> {
     const title = input.title.trim();
 
@@ -114,9 +115,11 @@ export class SaveLoadedPedalboardService {
     }
 
     const afterMatches = await this.findUserMatches(title);
-    const savedBundleInspection = afterMatches[0]
-      ? await this.inspectSavedBundle(afterMatches[0].bundlePath)
-      : null;
+    const inspectSavedBundle = input.inspectSavedBundle ?? true;
+    const savedBundleInspection =
+      inspectSavedBundle && afterMatches[0]
+        ? await this.inspectSavedBundle(afterMatches[0].bundlePath)
+        : null;
     return {
       writeToolsEnabled: true,
       confirmed: true,
@@ -162,26 +165,38 @@ export class SaveLoadedPedalboardService {
 
   private async validateExpectedLoadedGraph(input: {
     expectedPluginUris?: string[];
+    loadedBundlePath?: string;
   }): Promise<LoadedGraphValidation | undefined> {
     if (!input.expectedPluginUris) return undefined;
     const expectedPluginUris = input.expectedPluginUris;
+    const bundlePath = input.loadedBundlePath?.trim() || null;
 
     try {
-      // Query the active graph without a bundlepath argument
-      const response = await this.writeApiOrThrow().getJson<{
-        title?: string;
-        plugins?: Array<{ uri?: string }>;
-      }>("/pedalboard/info/", "validate currently loaded active graph before save");
+      const path = bundlePath
+        ? `/pedalboard/info/?bundlepath=${encodeURIComponent(bundlePath)}`
+        : "/pedalboard/info/";
+      let response: { ok: boolean; status: number; value: { title?: string; plugins?: Array<{ uri?: string }> } | null; text: string };
+      try {
+        response = await this.writeApiOrThrow().getJson<{
+          title?: string;
+          plugins?: Array<{ uri?: string }>;
+        }>(path, "validate currently loaded active graph before save");
+      } catch {
+        response = await this.writeApiOrThrow().getJson<{
+          title?: string;
+          plugins?: Array<{ uri?: string }>;
+        }>("/pedalboard/info/", "fallback validate currently loaded active graph before save");
+      }
       if (!response.ok || !response.value) {
         return {
           attempted: true,
           success: false,
-          bundlePath: "active",
+          bundlePath: bundlePath ?? "active",
           pluginCount: 0,
           expectedPluginUris,
           actualPluginUris: [],
           missingPluginUris: expectedPluginUris,
-          error: `HTTP ${response.status} from /pedalboard/info/ (active)`
+          error: `HTTP ${response.status} from ${path}`
         };
       }
 
@@ -194,7 +209,7 @@ export class SaveLoadedPedalboardService {
       return {
         attempted: true,
         success: actualPluginUris.length > 0 && missingPluginUris.length === 0,
-        bundlePath: "active",
+        bundlePath: bundlePath ?? "active",
         pluginCount: actualPluginUris.length,
         expectedPluginUris,
         actualPluginUris,
@@ -210,7 +225,7 @@ export class SaveLoadedPedalboardService {
       return {
         attempted: true,
         success: false,
-        bundlePath: "active",
+        bundlePath: bundlePath ?? "active",
         pluginCount: 0,
         expectedPluginUris,
         actualPluginUris: [],

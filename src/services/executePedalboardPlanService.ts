@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { DryBundleService } from "./dryBundleService.js";
 import type { ImportBundleService } from "./importBundleService.js";
-import type { LoadExistingPedalboardService } from "./loadExistingPedalboardService.js";
+import type { PedalboardService } from "./pedalboardService.js";
 import type { SaveLoadedPedalboardService } from "./saveLoadedPedalboardService.js";
 import type { PedalboardPlan } from "../types/plan.js";
 
@@ -29,8 +29,8 @@ export class ExecutePedalboardPlanService {
   constructor(
     private readonly dryBundleService: DryBundleService,
     private readonly importBundleService: ImportBundleService,
-    private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService,
-    private readonly loadExistingPedalboardService: LoadExistingPedalboardService
+    private readonly pedalboardService: PedalboardService,
+    private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService
   ) {}
 
   async execute(input: {
@@ -64,35 +64,38 @@ export class ExecutePedalboardPlanService {
       };
     }
 
-    const saveResult = await this.saveLoadedPedalboardService.saveAsNew({
+    const expectedPluginUris = input.plan.signalChain
+      .map((plugin) => plugin.uri)
+      .filter((uri): uri is string => Boolean(uri));
+    const saveAttempt = await this.saveLoadedPedalboardService.saveAsNew({
       title,
       confirm: true,
-      expectedPluginUris: input.plan.signalChain.map((plugin) => plugin.uri).filter(Boolean) as string[],
-      loadedBundlePath: dryBundle.bundlePath
+      expectedPluginUris,
+      loadedBundlePath: `/tmp/pedalboards/${basename(dryBundle.bundlePath)}`,
+      inspectSavedBundle: false
     });
 
-    const saved = Boolean(saveResult.saved.success);
-    const savedBundlePath = saveResult.matchingPedalboards[0]?.bundlePath ?? null;
-    let loaded = false;
-    let loadNotes: string[] = [];
-    let loadApiCalls: ExecutePedalboardPlanResult["apiCalls"] = [];
-
-    if (saved && savedBundlePath) {
-      const loadResult = await this.loadExistingPedalboardService.load({
-        bundlePath: savedBundlePath,
-        confirm: true
+    let saveResult = saveAttempt;
+    let savedTitle = title;
+    if (!saveAttempt.saved.success && saveAttempt.targetExistsBefore) {
+      savedTitle = await this.nextAvailableTitle(title);
+      saveResult = await this.saveLoadedPedalboardService.saveAsNew({
+        title: savedTitle,
+        confirm: true,
+        expectedPluginUris,
+        loadedBundlePath: `/tmp/pedalboards/${basename(dryBundle.bundlePath)}`,
+        inspectSavedBundle: false
       });
-      loaded = Boolean(loadResult.load.success);
-      loadNotes = loadResult.notes;
-      loadApiCalls = loadResult.apiCalls;
     }
+
+    const saved = Boolean(saveResult.saved.success);
+    const loaded = saved;
 
     const notes = [
       ...importResult.notes,
       ...saveResult.notes,
-      ...loadNotes,
-      saved ? "Saved as a new pedalboard after import." : "Save failed after import.",
-      loaded ? "Reloaded the saved pedalboard." : "Reload after save did not complete."
+      saved ? `Saved as a new pedalboard as '${savedTitle}'.` : "Save failed after import.",
+      loaded ? "Imported bundle remains active after save." : "Active graph did not remain loaded."
     ];
     const reportPath = await this.writeReport(title, input.plan, true, saved, loaded, notes);
 
@@ -104,7 +107,7 @@ export class ExecutePedalboardPlanService {
       saved,
       loaded,
       reportPath,
-      apiCalls: [...importResult.apiCalls, ...saveResult.apiCalls, ...loadApiCalls],
+      apiCalls: [...importResult.apiCalls, ...saveResult.apiCalls],
       notes
     };
   }
@@ -129,6 +132,22 @@ export class ExecutePedalboardPlanService {
 
   private defaultTitle(plan: PedalboardPlan): string {
     return `${plan.request.instrument} ${plan.request.style}`.trim() || "MOD Dwarf Pedalboard";
+  }
+
+  private async nextAvailableTitle(baseTitle: string): Promise<string> {
+    const pedalboards = await this.pedalboardService.listPedalboards("user");
+    for (let index = 2; index < 10; index += 1) {
+      const candidate = `${baseTitle} (${index})`;
+      const taken = pedalboards.user.some(
+        (pedalboard) =>
+          normalizeTitle(pedalboard.title ?? pedalboard.bundlePath.split("/").pop() ?? "") ===
+          normalizeTitle(candidate)
+      );
+      if (!taken) {
+        return candidate;
+      }
+    }
+    return `${baseTitle} (${Date.now()})`;
   }
 
   private async writeReport(
@@ -175,4 +194,8 @@ function timestamp(): string {
     pad(now.getMinutes()),
     pad(now.getSeconds())
   ].join("");
+}
+
+function normalizeTitle(value: string): string {
+  return value.replace(/\.pedalboard$/, "").replace(/_/g, " ").trim().toLowerCase();
 }
