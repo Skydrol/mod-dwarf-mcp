@@ -35,6 +35,7 @@ export class CreateNewPedalboardService {
         writeToolsEnabled: true,
         confirmed: true,
         title,
+        operationMode: "new_board",
         reset,
         saved: {
           attempted: false,
@@ -54,6 +55,7 @@ export class CreateNewPedalboardService {
         writeToolsEnabled: true,
         confirmed: true,
         title,
+        operationMode: "new_board",
         reset,
         saved: save,
         apiCalls: [...this.writeApi.calls],
@@ -68,6 +70,7 @@ export class CreateNewPedalboardService {
       writeToolsEnabled: true,
       confirmed: true,
       title,
+      operationMode: "new_board",
       reset,
       saved: save,
       apiCalls: [...this.writeApi.calls],
@@ -191,6 +194,7 @@ export class CreateNewPedalboardService {
       writeToolsEnabled: this.writeToolsEnabled,
       confirmed,
       title,
+      operationMode: "new_board",
       reset: {
         attempted: false,
         success: false,

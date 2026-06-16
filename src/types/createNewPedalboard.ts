@@ -4,6 +4,7 @@ export interface CreateNewPedalboardResult {
   writeToolsEnabled: boolean;
   confirmed: boolean;
   title: string;
+  operationMode: "new_board";
   reset:
     | {
         attempted: true;
