@@ -6,6 +6,7 @@ import type {
   PlannedSnapshot
 } from "../types/plan.js";
 import type { PluginService } from "./pluginService.js";
+import { PluginKnowledgeDbService } from "./pluginKnowledgeDbService.js";
 import { PedalboardSafetyService } from "./pedalboardSafetyService.js";
 import { RoleParameterProfileService } from "./roleParameterProfileService.js";
 
@@ -24,6 +25,7 @@ interface RoleSpec {
 export class PedalboardPlannerService {
   constructor(
     private readonly pluginService: PluginService,
+    private readonly knowledgeDbService: PluginKnowledgeDbService = new PluginKnowledgeDbService(),
     private readonly profileService: RoleParameterProfileService = new RoleParameterProfileService(),
     private readonly safetyService: PedalboardSafetyService = new PedalboardSafetyService()
   ) {}
@@ -32,6 +34,7 @@ export class PedalboardPlannerService {
     const promptText = promptTextFor(input);
     const operationMode = this.decideOperationMode(promptText);
     const pluginList = await this.pluginService.listPlugins("both");
+    const knowledgeDb = await this.knowledgeDbService.load();
     const plugins = pluginList.plugins.map((plugin) => ({
       name: plugin.name ?? plugin.uri ?? "",
       uri: plugin.uri
@@ -42,7 +45,7 @@ export class PedalboardPlannerService {
 
     const resolved = await Promise.all(
       roles.map(async (role, index) => {
-        const selected = this.pickPlugin(plugins, role.preferred);
+        const selected = this.pickPlugin(plugins, role.preferred, knowledgeDb);
         if (!selected) {
           unsupportedIdeas.push(`No installed plugin found for role: ${role.role}`);
           return null;
@@ -291,16 +294,19 @@ export class PedalboardPlannerService {
     return dedupeRoles(roles);
   }
 
-  private pickPlugin(plugins: PluginCandidate[], preferred: string[]): PluginCandidate | null {
-    for (const target of preferred) {
-      const normalized = normalize(target);
-      const found = plugins.find(
-        (plugin) =>
-          normalize(plugin.name) === normalized || normalize(plugin.uri ?? "") === normalized
-      );
-      if (found) return found;
-    }
-    return null;
+  private pickPlugin(
+    plugins: PluginCandidate[],
+    preferred: string[],
+    knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+  ): PluginCandidate | null {
+    const scored = plugins
+      .map((plugin) => ({
+        plugin,
+        score: scorePluginCandidate(plugin, preferred, knowledgeDb)
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score || left.plugin.name.localeCompare(right.plugin.name));
+    return scored[0]?.plugin ?? null;
   }
 
   private toPlannedPlugin(
@@ -459,4 +465,49 @@ function dedupe(values: string[]): string[] {
 function formatRange(range: { min: number; max: number; unit?: string }): string {
   const suffix = range.unit ? ` ${range.unit}` : "";
   return `${range.min}..${range.max}${suffix}`;
+}
+
+function scorePluginCandidate(
+  plugin: PluginCandidate,
+  preferred: string[],
+  knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+): number {
+  const normalizedName = normalize(plugin.name);
+  const normalizedUri = normalize(plugin.uri ?? "");
+  let score = 0;
+
+  for (let index = 0; index < preferred.length; index += 1) {
+    const target = normalize(preferred[index]);
+    if (normalizedName === target || normalizedUri === target) {
+      score += 100 - index * 5;
+      break;
+    }
+  }
+
+  const entry = knowledgeDb?.plugins.find(
+    (item) => normalize(item.name) === normalizedName || normalize(item.uri) === normalizedUri
+  );
+  if (!entry) return score;
+
+  const preferredRole = inferPreferredRoleFromCandidates(preferred);
+  if (preferredRole && entry.roles.includes(preferredRole)) score += 25;
+  if (preferredRole && entry.category === preferredRole) score += 15;
+  if (entry.goodFor.length > 0) score += 2;
+  if (entry.warnings.length > 0) score -= 1;
+  if (entry.plannerNotes.length > 0) score += 1;
+
+  return score;
+}
+
+function inferPreferredRoleFromCandidates(preferred: string[]): string | null {
+  const joined = normalize(preferred.join(" "));
+  if (joined.includes("reverb")) return "reverb";
+  if (joined.includes("delay")) return "delay";
+  if (joined.includes("chorus") || joined.includes("flanger") || joined.includes("mod")) return "modulation";
+  if (joined.includes("compress")) return "dynamics";
+  if (joined.includes("cab") || joined.includes("amp")) return "amp";
+  if (joined.includes("gain") || joined.includes("volume")) return "utility";
+  if (joined.includes("eq") || joined.includes("filter")) return "EQ";
+  if (joined.includes("drive") || joined.includes("dist") || joined.includes("fuzz")) return "drive";
+  return null;
 }
