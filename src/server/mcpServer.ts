@@ -93,11 +93,10 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
   };
 
   context.executePedalboardPlanService = new ExecutePedalboardPlanService(
-    context.liveGraphAuthoringPlanService,
+    context.dryBundleService,
+    context.importBundleService,
     context.saveLoadedPedalboardService,
     context.loadExistingPedalboardService,
-    deps.writeHttp ?? null,
-    deps.writeToolsEnabled === true
   );
 
   void deps.http;

@@ -1,17 +1,19 @@
-import type { WriteHttpClient } from "../clients/writeHttpClient.js";
-import type { LiveGraphAuthoringPlanService } from "./liveGraphAuthoringPlan.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { DryBundleService } from "./dryBundleService.js";
+import type { ImportBundleService } from "./importBundleService.js";
 import type { LoadExistingPedalboardService } from "./loadExistingPedalboardService.js";
 import type { SaveLoadedPedalboardService } from "./saveLoadedPedalboardService.js";
 import type { PedalboardPlan } from "../types/plan.js";
-import type { LiveGraphApiCall } from "../types/liveGraphAuthoringPlan.js";
 
 export interface ExecutePedalboardPlanResult {
   confirmed: boolean;
   operationMode: PedalboardPlan["operationMode"];
   title: string;
-  applied: boolean;
+  imported: boolean;
   saved: boolean;
   loaded: boolean;
+  reportPath: string | null;
   apiCalls: Array<{
     method: "GET" | "POST";
     path: string;
@@ -25,11 +27,10 @@ export interface ExecutePedalboardPlanResult {
 
 export class ExecutePedalboardPlanService {
   constructor(
-    private readonly liveGraphAuthoringPlanService: LiveGraphAuthoringPlanService,
+    private readonly dryBundleService: DryBundleService,
+    private readonly importBundleService: ImportBundleService,
     private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService,
-    private readonly loadExistingPedalboardService: LoadExistingPedalboardService,
-    private readonly writeApi: WriteHttpClient | null,
-    private readonly writeToolsEnabled: boolean
+    private readonly loadExistingPedalboardService: LoadExistingPedalboardService
   ) {}
 
   async execute(input: {
@@ -38,87 +39,73 @@ export class ExecutePedalboardPlanService {
     title?: string;
   }): Promise<ExecutePedalboardPlanResult> {
     const title = (input.title ?? this.defaultTitle(input.plan)).trim();
-    if (!this.writeToolsEnabled || !this.writeApi) {
-      return this.notAttempted(input.plan.operationMode, title, "Write tools are disabled.");
-    }
     if (!input.confirm) {
       return this.notAttempted(input.plan.operationMode, title, "Tool input must include confirm=true.");
     }
 
-    const plan = await this.liveGraphAuthoringPlanService.buildPlan(input.plan);
-    const apiCalls: ExecutePedalboardPlanResult["apiCalls"] = [];
-    const notes: string[] = [...plan.notes];
-    let applied = false;
+    const dryBundle = await this.dryBundleService.createDryBundle(input.plan);
+    const importResult = await this.importBundleService.importDryBundle({
+      dryBundle,
+      confirm: true,
+      targetName: title
+    });
 
-    if (input.plan.operationMode === "new_board" || input.plan.operationMode === "replace_current_board") {
-      const resetResponse = await this.writeApi.getBytes(
-        "/reset",
-        `prepare ${input.plan.operationMode.replace(/_/g, " ")} before execute pedalboard plan`
-      );
-      apiCalls.push(recordCall("GET", "/reset", "prepare board before execute pedalboard plan", resetResponse));
-      if (!resetResponse.ok) {
-        return {
-          confirmed: true,
-          operationMode: input.plan.operationMode,
-          title,
-          applied: false,
-          saved: false,
-          loaded: false,
-          apiCalls,
-          notes: [...notes, `Reset failed with HTTP ${resetResponse.status}.`]
-        };
-      }
+    if (!importResult.import.success) {
+      return {
+        confirmed: true,
+        operationMode: input.plan.operationMode,
+        title,
+        imported: false,
+        saved: false,
+        loaded: false,
+        reportPath: await this.writeReport(title, input.plan, false, false, false, importResult.notes),
+        apiCalls: importResult.apiCalls,
+        notes: [...importResult.notes, "Import failed before save/load."]
+      };
     }
-
-    for (const call of plan.apiCalls) {
-      const response = await executeApiCall(this.writeApi, call);
-      apiCalls.push(recordCall(call.method, call.path, call.purpose, response));
-      if (!response.ok) {
-        return {
-          confirmed: true,
-          operationMode: input.plan.operationMode,
-          title,
-          applied: false,
-          saved: false,
-          loaded: false,
-          apiCalls,
-          notes: [...notes, `Execution stopped on HTTP ${response.status} for ${call.path}.`]
-        };
-      }
-    }
-
-    applied = true;
 
     const saveResult = await this.saveLoadedPedalboardService.saveAsNew({
       title,
       confirm: true,
-      expectedPluginUris: input.plan.signalChain.map((plugin) => plugin.uri).filter(Boolean) as string[]
+      expectedPluginUris: input.plan.signalChain.map((plugin) => plugin.uri).filter(Boolean) as string[],
+      loadedBundlePath: dryBundle.bundlePath
     });
+
     const saved = Boolean(saveResult.saved.success);
     const savedBundlePath = saveResult.matchingPedalboards[0]?.bundlePath ?? null;
-
     let loaded = false;
+    let loadNotes: string[] = [];
+    let loadApiCalls: ExecutePedalboardPlanResult["apiCalls"] = [];
+
     if (saved && savedBundlePath) {
       const loadResult = await this.loadExistingPedalboardService.load({
         bundlePath: savedBundlePath,
         confirm: true
       });
       loaded = Boolean(loadResult.load.success);
-      apiCalls.push(...loadResult.apiCalls);
-      notes.push(...loadResult.notes);
-    } else {
-      notes.push("Saved pedalboard was not reloaded because no matching bundle path was found.");
+      loadNotes = loadResult.notes;
+      loadApiCalls = loadResult.apiCalls;
     }
+
+    const notes = [
+      ...importResult.notes,
+      ...saveResult.notes,
+      ...loadNotes,
+      saved ? "Saved as a new pedalboard after import." : "Save failed after import.",
+      loaded ? "Reloaded the saved pedalboard." : "Reload after save did not complete."
+    ];
+    const reportPath = await this.writeReport(title, input.plan, true, saved, loaded, notes);
 
     return {
       confirmed: true,
       operationMode: input.plan.operationMode,
       title,
-      applied,
+      imported: true,
       saved,
       loaded,
-      apiCalls: [...apiCalls, ...saveResult.apiCalls],
-      notes: [...notes, ...saveResult.notes]
+      reportPath,
+      apiCalls: [...importResult.apiCalls, ...saveResult.apiCalls, ...loadApiCalls],
+      notes
     };
   }
 
@@ -131,9 +118,10 @@ export class ExecutePedalboardPlanService {
       confirmed: false,
       operationMode,
       title,
-      applied: false,
+      imported: false,
       saved: false,
       loaded: false,
+      reportPath: null,
       apiCalls: [],
       notes: [error]
     };
@@ -142,33 +130,49 @@ export class ExecutePedalboardPlanService {
   private defaultTitle(plan: PedalboardPlan): string {
     return `${plan.request.instrument} ${plan.request.style}`.trim() || "MOD Dwarf Pedalboard";
   }
+
+  private async writeReport(
+    title: string,
+    plan: PedalboardPlan,
+    imported: boolean,
+    saved: boolean,
+    loaded: boolean,
+    notes: string[]
+  ): Promise<string | null> {
+    try {
+      await mkdir("final_reports", { recursive: true });
+      const stamp = timestamp();
+      const path = join("final_reports", `execute_${stamp}.txt`);
+      const body = [
+        `title: ${title}`,
+        `operationMode: ${plan.operationMode}`,
+        `imported: ${imported}`,
+        `saved: ${saved}`,
+        `loaded: ${loaded}`,
+        "",
+        "snapshots:",
+        ...plan.snapshots.map((snapshot) => `- ${snapshot.name}: ${snapshot.description}`),
+        "",
+        "notes:",
+        ...notes.map((note) => `- ${note}`)
+      ].join("\n");
+      await writeFile(path, `${body}\n`, "utf8");
+      return path;
+    } catch {
+      return null;
+    }
+  }
 }
 
-async function executeApiCall(writeApi: WriteHttpClient, call: LiveGraphApiCall) {
-  if (call.method === "GET") {
-    return writeApi.getBytes(call.path, call.purpose);
-  }
-  if (call.body.kind === "form") {
-    return writeApi.postForm(call.path, call.body.fields, call.purpose);
-  }
-  if (call.body.kind === "json") {
-    return writeApi.postJson(call.path, call.body.value, call.purpose);
-  }
-  return writeApi.postForm(call.path, {}, call.purpose);
-}
-
-function recordCall(
-  method: "GET" | "POST",
-  path: string,
-  purpose: string,
-  response: { ok: boolean; status: number; text: string }
-) {
-  return {
-    method,
-    path,
-    purpose,
-    status: response.ok ? ("success" as const) : ("failed" as const),
-    httpStatus: response.status,
-    error: response.ok ? undefined : response.text.slice(0, 500)
-  };
+function timestamp(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds())
+  ].join("");
 }
