@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { WriteHttpClient } from "../clients/writeHttpClient.js";
 import type { DryBundleService } from "./dryBundleService.js";
 import type { ImportBundleService } from "./importBundleService.js";
 import type { PedalboardService } from "./pedalboardService.js";
@@ -30,7 +31,8 @@ export class ExecutePedalboardPlanService {
     private readonly dryBundleService: DryBundleService,
     private readonly importBundleService: ImportBundleService,
     private readonly pedalboardService: PedalboardService,
-    private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService
+    private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService,
+    private readonly writeApi: WriteHttpClient | null
   ) {}
 
   async execute(input: {
@@ -44,6 +46,9 @@ export class ExecutePedalboardPlanService {
     }
 
     const dryBundle = await this.dryBundleService.createDryBundle(input.plan);
+    if (input.plan.operationMode === "new_board" || input.plan.operationMode === "replace_current_board") {
+      await this.resetBoard();
+    }
     const importResult = await this.importBundleService.importDryBundle({
       dryBundle,
       confirm: true,
@@ -132,6 +137,15 @@ export class ExecutePedalboardPlanService {
 
   private defaultTitle(plan: PedalboardPlan): string {
     return `${plan.request.instrument} ${plan.request.style}`.trim() || "MOD Dwarf Pedalboard";
+  }
+
+  private async resetBoard(): Promise<void> {
+    if (!this.writeApi) return;
+    try {
+      await this.writeApi.getBytes("/reset", "reset board before prompt execution");
+    } catch {
+      // Best effort; import will still run and report its own status.
+    }
   }
 
   private async nextAvailableTitle(baseTitle: string): Promise<string> {

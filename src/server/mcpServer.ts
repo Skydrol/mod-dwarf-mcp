@@ -96,7 +96,8 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     context.dryBundleService,
     context.importBundleService,
     context.pedalboardService,
-    context.saveLoadedPedalboardService
+    context.saveLoadedPedalboardService,
+    deps.writeHttp ?? null
   );
 
   void deps.http;

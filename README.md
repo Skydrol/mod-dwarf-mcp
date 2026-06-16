@@ -302,6 +302,8 @@ Build the project and register it as a local MCP server in the Codex environment
 
 Then ask Codex to use `mod-dwarf-mcp` tools to inspect pedalboards, banks, snapshots, and plugins.
 
+For prompt-driven creation, follow the workflow in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md): discover installed plugins first, decide the effect list and snapshots explicitly, then call `create_pedalboard_from_prompt`.
+
 ## ChatGPT MCP Usage
 
 For ChatGPT clients that support custom MCP connectors, configure the command transport with:

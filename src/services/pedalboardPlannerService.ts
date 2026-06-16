@@ -159,6 +159,7 @@ export class PedalboardPlannerService {
   private rolesFor(input: PedalboardPlanInput): RoleSpec[] {
     const text = promptTextFor(input);
     const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
+    const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
       "infinite",
@@ -191,6 +192,13 @@ export class PedalboardPlannerService {
       roles.push(cabinetRole());
     } else if (isLetItHappenBoard) {
       // Let It Happen works best as a single-gain, effects-forward chain.
+    } else if (isSmellsLikeTeenSpirit) {
+      roles.push({
+        role: "grunge drive",
+        preferred: ["DS1", "Big Muff", "DT-1", "Distortion", "ChowCentaur"],
+        reason: "Main Nirvana-style distortion, using the closest installed drive when DS-1 is unavailable.",
+        requiresProfile: true
+      });
     } else if (matches(text, ["clean", "ambient", "jazz", "post rock", "shoegaze", "funk"])) {
       roles.push({
         role: "clean tone shaper",
@@ -221,6 +229,15 @@ export class PedalboardPlannerService {
         role: "modulation",
         preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
         reason: "Adds width and movement requested by the prompt.",
+        requiresProfile: true
+      });
+    }
+
+    if (isSmellsLikeTeenSpirit) {
+      roles.push({
+        role: "modulation",
+        preferred: ["TAP Chorus/Flanger", "Calf Flanger", "GxFlanger", "CS Chorus 1"],
+        reason: "Small Clone-style chorus approximation for Smells Like Teen Spirit.",
         requiresProfile: true
       });
     }
@@ -291,6 +308,24 @@ export class PedalboardPlannerService {
       requiresProfile: true
     });
 
+    if (isSmellsLikeTeenSpirit) {
+      return dedupeRoles(
+        roles.filter(
+          (role) =>
+            role.role !== "input gain" &&
+            role.role !== "output level" &&
+            role.role !== "clean tone shaper"
+        )
+      ).concat([
+        {
+          role: "output level",
+          preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
+          reason: "Final trim before hardware outputs.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
     return dedupeRoles(roles);
   }
 
@@ -331,9 +366,42 @@ export class PedalboardPlannerService {
   ): PlannedSnapshot[] {
     const text = promptTextFor(input);
     const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
+    const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
     const hasDelay = signalChain.some((plugin) => plugin.role === "delay");
     const hasReverb = signalChain.some((plugin) => plugin.role === "reverb");
     const hasDrive = signalChain.some((plugin) => /drive|gain|core tone/.test(plugin.role));
+
+    if (isSmellsLikeTeenSpirit) {
+      return [
+        {
+          name: "Verse",
+          description: "Chorus-forward crunch with restrained output.",
+          parameterFocus: {
+            drive: "moderate distortion",
+            modulation: "subtle chorus",
+            output: "unity gain"
+          }
+        },
+        {
+          name: "Chorus",
+          description: "Bigger attack and a wider chorus texture.",
+          parameterFocus: {
+            drive: "slightly hotter drive",
+            modulation: "more obvious width",
+            output: "trim to avoid clipping"
+          }
+        },
+        {
+          name: "Lead",
+          description: "Forward guitar with the same core tone and a little more lift.",
+          parameterFocus: {
+            drive: "same distortion character",
+            modulation: "kept on for width",
+            output: "small level lift if available"
+          }
+        }
+      ];
+    }
 
     if (isLetItHappenBoard) {
       const snapshots: PlannedSnapshot[] = [
