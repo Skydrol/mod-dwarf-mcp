@@ -20,8 +20,8 @@ describe("GraphLayoutService", () => {
       plugin("output level", "Gain 2x2")
     ]);
 
-    expect(layout.map(({ x }) => x)).toEqual([120, 880, 1640, 2400, 3160]);
-    expect(layout.map(({ y }) => y)).toEqual([280, 300, 320, 420, 760]);
+    expect(layout.map(({ x }) => x)).toEqual([120, 940, 1760, 2580, 3400]);
+    expect(layout.map(({ y }) => y)).toEqual([260, 300, 380, 500, 860]);
   });
 
   it("lays out a Let It Happen style chain in distinct lanes", () => {
@@ -41,7 +41,7 @@ describe("GraphLayoutService", () => {
       "time",
       "output"
     ]);
-    expect(layout.map(({ x }) => x)).toEqual([120, 880, 1640, 2400, 3160]);
+    expect(layout.map(({ x }) => x)).toEqual([120, 940, 1760, 2580, 3400]);
     expect(layout[0].y).toBeLessThan(layout[1].y);
     expect(layout[1].y).toBeLessThan(layout[2].y);
     expect(layout[3].y).toBeGreaterThan(layout[0].y);
@@ -59,7 +59,7 @@ describe("GraphLayoutService", () => {
     ]);
 
     expect(layout.map(({ lane }) => lane)).toEqual(["utility", "drive", "drive", "output"]);
-    expect(layout.map(({ x }) => x)).toEqual([120, 880, 1640, 2400]);
+    expect(layout.map(({ x }) => x)).toEqual([120, 940, 1760, 2580]);
   });
 
   it("does not overlap coordinates for a mixed chain", () => {

@@ -47,9 +47,9 @@ describe("DryBundleService", () => {
     expect(manifest).toContain("pedal:Pedalboard");
     expect(mainTtl).toContain("a ingen:Block");
     expect(mainTtl).toContain("ingen:canvasX 120.0 ;");
-    expect(mainTtl).toContain("ingen:canvasX 880.0 ;");
-    expect(mainTtl).toContain("ingen:canvasX 1640.0 ;");
-    expect(mainTtl).toContain("ingen:canvasY 760.0 ;");
+    expect(mainTtl).toContain("ingen:canvasX 940.0 ;");
+    expect(mainTtl).toContain("ingen:canvasX 1760.0 ;");
+    expect(mainTtl).toContain("ingen:canvasY 860.0 ;");
     expect(snapshots.snapshots.length).toBe(plan.snapshots.length);
     expect(Object.keys(addressings)[0]).toBe("/hmi/knob1");
   });

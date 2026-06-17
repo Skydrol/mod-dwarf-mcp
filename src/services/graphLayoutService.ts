@@ -9,7 +9,7 @@ export interface GraphLayoutPlacement extends Pick<PlannedPlugin, "role" | "name
 }
 
 const START_X = 120;
-const STEP_X = 760;
+const STEP_X = 820;
 const LANE_X_OFFSET: Record<GraphLayoutLane, number> = {
   utility: 0,
   drive: 0,
@@ -19,11 +19,11 @@ const LANE_X_OFFSET: Record<GraphLayoutLane, number> = {
 };
 
 const LANE_Y: Record<GraphLayoutLane, number> = {
-  utility: 280,
+  utility: 260,
   drive: 300,
-  modulation: 320,
-  time: 420,
-  output: 760
+  modulation: 380,
+  time: 500,
+  output: 860
 };
 
 export class GraphLayoutService {
