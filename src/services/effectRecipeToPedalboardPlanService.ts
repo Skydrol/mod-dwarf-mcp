@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { EffectRecipe, PedalboardPlan, PlannedPlugin, PlannedSnapshot } from "../types/plan.js";
 import type { PluginService } from "./pluginService.js";
 import type { PluginKnowledgeDbService } from "./pluginKnowledgeDbService.js";
@@ -8,6 +10,12 @@ interface PluginCandidate {
   name: string;
   uri?: string;
 }
+
+interface DeviceInventoryFile {
+  plugins?: Array<{ name?: string; uri?: string }>;
+}
+
+const DEFAULT_DEVICE_INVENTORY_PATH = "data/deviceInventory.json";
 
 export class EffectRecipeToPedalboardPlanService {
   constructor(
@@ -20,9 +28,13 @@ export class EffectRecipeToPedalboardPlanService {
   async convert(recipe: EffectRecipe): Promise<PedalboardPlan> {
     const pluginList = await this.pluginService.listPlugins("both");
     const knowledgeDb = await this.knowledgeDbService.load();
-    const plugins = pluginList.plugins
+    const inventoryPlugins = await loadDeviceInventoryPlugins();
+    const plugins = [
+      ...pluginList.plugins
       .map((plugin) => ({ name: plugin.name ?? plugin.uri ?? "", uri: plugin.uri }))
-      .filter((plugin) => plugin.name.length > 0);
+      .filter((plugin) => plugin.name.length > 0),
+      ...inventoryPlugins
+    ];
 
     const chain = await this.buildChain(recipe, plugins, knowledgeDb);
     const snapshots = dedupeSnapshots(recipe.snapshots.map(recipeSnapshotToPlan));
@@ -114,13 +126,13 @@ export class EffectRecipeToPedalboardPlanService {
   private async buildElephantChain(
     recipe: EffectRecipe,
     plugins: PluginCandidate[],
-    knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+    _knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
   ): Promise<PlannedPlugin[]> {
     const chain: PlannedPlugin[] = [];
     const roles: Array<{ role: string; preferred: string[]; reason: string }> = [
       {
         role: "fuzz",
-        preferred: ["Big Muff", "GxSuperFuzz", "Fuzz", "GxFuzzFaceFullerMod"],
+        preferred: ["Open Big Muff", "Big Muff", "GxSuperFuzz", "Fuzz", "GxFuzzFaceFullerMod"],
         reason: "Core fuzzy riff texture for Elephant."
       },
       {
@@ -137,7 +149,7 @@ export class EffectRecipeToPedalboardPlanService {
 
     for (let index = 0; index < roles.length; index += 1) {
       const spec = roles[index];
-      const selected = this.pickForRecipe(spec.role, spec.reason, plugins, knowledgeDb);
+      const selected = selectPreferredPlugin(plugins, spec.preferred);
       if (!selected) continue;
 
       const ports = selected.uri
@@ -258,6 +270,13 @@ function findPreferredPlugin(plugins: PluginCandidate[], preferred: string[]): P
   return null;
 }
 
+function selectPreferredPlugin(
+  plugins: PluginCandidate[],
+  preferred: string[]
+): PluginCandidate | null {
+  return findPreferredPlugin(plugins, preferred);
+}
+
 function scoreRecipeCandidate(
   plugin: PluginCandidate,
   preferred: string[],
@@ -308,6 +327,21 @@ function isElephantRecipe(recipe: EffectRecipe): boolean {
     normalize(`${recipe.song ?? ""} ${recipe.artist ?? ""}`),
     ["elephant", "tameimpala"]
   );
+}
+
+async function loadDeviceInventoryPlugins(): Promise<PluginCandidate[]> {
+  try {
+    const absolutePath = resolve(process.cwd(), DEFAULT_DEVICE_INVENTORY_PATH);
+    const raw = await readFile(absolutePath, "utf8");
+    const parsed = JSON.parse(raw) as DeviceInventoryFile;
+    if (!parsed || !Array.isArray(parsed.plugins)) return [];
+
+    return parsed.plugins
+      .map((plugin) => ({ name: plugin.name ?? plugin.uri ?? "", uri: plugin.uri }))
+      .filter((plugin) => plugin.name.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 function dedupeSnapshots(snapshots: PlannedSnapshot[]): PlannedSnapshot[] {

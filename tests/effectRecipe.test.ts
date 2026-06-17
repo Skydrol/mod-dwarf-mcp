@@ -115,7 +115,7 @@ describe("EffectRecipeToPedalboardPlanService", () => {
       "cabinet"
     ]);
     expect(plan.signalChain.map((plugin) => plugin.name)).toEqual([
-      "AIDA-X",
+      "Open Big Muff",
       "AIDA-X",
       "Vintage Cabinets"
     ]);

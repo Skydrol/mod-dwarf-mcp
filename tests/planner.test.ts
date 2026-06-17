@@ -9,8 +9,7 @@ import { MockRunner } from "./mockRunner.js";
 
 describe("PedalboardPlannerService", () => {
   it("returns a dry-run plan using only installed plugins", async () => {
-    const runner = new MockRunner();
-    const pluginService = new PluginService(runner);
+    const pluginService = new PluginService(null, pluginCatalog);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -27,7 +26,7 @@ describe("PedalboardPlannerService", () => {
       modifiesDevice: false,
       callsPostEndpoints: false
     });
-    expect(plan.availablePluginCount).toBe(2);
+    expect(plan.availablePluginCount).toBe(10);
     expect(plan.template).toBeNull();
     expect(plan.signalChain.length).toBeGreaterThan(0);
 

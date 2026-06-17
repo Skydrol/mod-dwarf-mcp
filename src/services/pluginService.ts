@@ -1,8 +1,16 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { CommandRunner } from "../clients/sshClient.js";
 import type { PluginList, PluginPortInfo } from "../types/plugin.js";
 import { lines, parseLv2InfoPorts } from "./parsers.js";
 import { shellQuote } from "./sshUtils.js";
 import type { PluginCatalogEntry } from "../data/pluginCatalog.js";
+
+interface DeviceInventoryFile {
+  plugins?: Array<{ name?: string; uri?: string }>;
+}
+
+const DEFAULT_DEVICE_INVENTORY_PATH = "data/deviceInventory.json";
 
 export class PluginService {
   constructor(
@@ -47,6 +55,16 @@ export class PluginService {
     const cached = this.catalog.find((plugin) => plugin.uri === uri);
     if (cached) {
       return normalizeCatalogEntry(cached);
+    }
+    const inventory = await loadDeviceInventory();
+    if (inventory?.plugins?.some((plugin) => plugin.uri === uri || plugin.name === uri)) {
+      return {
+        uri,
+        ports: [],
+        audioInputs: [],
+        audioOutputs: [],
+        controlInputs: []
+      };
     }
     if (!this.ssh) {
       throw new Error(
@@ -96,4 +114,16 @@ function normalizeCatalogEntry(entry: PluginCatalogEntry): PluginPortInfo {
     audioOutputs,
     controlInputs
   };
+}
+
+async function loadDeviceInventory(): Promise<DeviceInventoryFile | null> {
+  try {
+    const absolutePath = resolve(process.cwd(), DEFAULT_DEVICE_INVENTORY_PATH);
+    const raw = await readFile(absolutePath, "utf8");
+    const parsed = JSON.parse(raw) as DeviceInventoryFile;
+    if (!parsed || !Array.isArray(parsed.plugins)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
