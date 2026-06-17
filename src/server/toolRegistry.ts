@@ -6,6 +6,7 @@ import { clearCurrentPedalboardTool } from "../tools/clearCurrentPedalboard.js";
 import { refreshDeviceInventoryTool } from "../tools/refreshDeviceInventory.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { createPedalboardFromPromptTool } from "../tools/createPedalboardFromPrompt.js";
+import { createPedalboardFromRecipeTool } from "../tools/createPedalboardFromRecipe.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -285,6 +286,63 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createPedalboardFromPromptTool(input, context)
+  );
+
+  server.registerTool(
+    "create_pedalboard_from_recipe",
+    {
+      title: "Create a pedalboard from a structured recipe",
+      description:
+        "Convert an explicit EffectRecipe into a pedalboard plan, then execute it through the existing end-to-end HTTP flow. Does not replace the planner or bypass confirm gating.",
+      inputSchema: {
+        recipe: z.object({
+          song: z.string().min(1).optional(),
+          artist: z.string().min(1).optional(),
+          instrument: z.string().min(1),
+          operationMode: z.enum([
+            "new_board",
+            "replace_current_board",
+            "modify_current_board",
+            "parameter_only"
+          ]),
+          effects: z
+            .array(
+              z
+                .object({
+                  role: z.string().min(1),
+                  character: z.string().min(1),
+                  intensity: z.enum(["subtle", "medium", "strong"]).optional()
+                })
+                .strict()
+            )
+            .min(1),
+          snapshots: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1),
+                  description: z.string().min(1),
+                  effectFocus: z.record(z.unknown())
+                })
+                .strict()
+            )
+            .default([]),
+          sections: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1),
+                  snapshot: z.string().min(1)
+                })
+                .strict()
+            )
+            .default([])
+        }).strict(),
+        confirm: z.boolean(),
+        title: z.string().min(1).optional()
+      }
+    },
+    async (input) => createPedalboardFromRecipeTool(input, context)
   );
 
   server.registerTool(

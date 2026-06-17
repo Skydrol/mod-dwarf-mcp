@@ -5,6 +5,35 @@ export interface PedalboardPlanInput {
   referenceArtists?: string[];
 }
 
+export type EffectRecipeIntensity = "subtle" | "medium" | "strong";
+
+export interface EffectRecipeEffect {
+  role: string;
+  character: string;
+  intensity?: EffectRecipeIntensity;
+}
+
+export interface EffectRecipeSnapshot {
+  name: string;
+  description: string;
+  effectFocus: Record<string, unknown>;
+}
+
+export interface EffectRecipeSection {
+  name: string;
+  snapshot: string;
+}
+
+export interface EffectRecipe {
+  song?: string;
+  artist?: string;
+  instrument: string;
+  operationMode: PedalboardOperationMode;
+  effects: EffectRecipeEffect[];
+  snapshots: EffectRecipeSnapshot[];
+  sections: EffectRecipeSection[];
+}
+
 export type PedalboardOperationMode =
   | "new_board"
   | "replace_current_board"

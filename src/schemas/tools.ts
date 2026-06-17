@@ -42,6 +42,54 @@ export const planPedalboardInputSchema = z
 
 export type PlanPedalboardInput = z.infer<typeof planPedalboardInputSchema>;
 
+export const effectRecipeSchema = z
+  .object({
+    song: z.string().min(1).optional(),
+    artist: z.string().min(1).optional(),
+    instrument: z.string().min(1),
+    operationMode: z.enum([
+      "new_board",
+      "replace_current_board",
+      "modify_current_board",
+      "parameter_only"
+    ]),
+    effects: z
+      .array(
+        z
+          .object({
+            role: z.string().min(1),
+            character: z.string().min(1),
+            intensity: z.enum(["subtle", "medium", "strong"]).optional()
+          })
+          .strict()
+      )
+      .min(1),
+    snapshots: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            description: z.string().min(1),
+            effectFocus: z.record(z.unknown())
+          })
+          .strict()
+      )
+      .default([]),
+    sections: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            snapshot: z.string().min(1)
+          })
+          .strict()
+      )
+      .default([])
+  })
+  .strict();
+
+export type EffectRecipeInput = z.infer<typeof effectRecipeSchema>;
+
 const parameterRangeSchema = z
   .object({
     min: z.number(),

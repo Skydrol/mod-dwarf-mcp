@@ -16,6 +16,7 @@ import type { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboa
 import type { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
 import type { SnapshotService } from "../services/snapshotService.js";
 import type { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
+import type { EffectRecipeToPedalboardPlanService } from "../services/effectRecipeToPedalboardPlanService.js";
 
 export interface ToolContext {
   deviceService: DeviceService;
@@ -36,6 +37,7 @@ export interface ToolContext {
   saveLoadedPedalboardService: SaveLoadedPedalboardService;
   loadExistingPedalboardService: LoadExistingPedalboardService;
   executePedalboardPlanService: ExecutePedalboardPlanService;
+  effectRecipeToPedalboardPlanService: EffectRecipeToPedalboardPlanService;
 }
 
 export function jsonContent(value: unknown) {

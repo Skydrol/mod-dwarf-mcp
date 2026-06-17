@@ -23,6 +23,14 @@ For a user prompt like "Smells Like Teen Spirit":
 2. Decide the effect list and snapshots explicitly.
 3. Use `create_pedalboard_from_prompt` to build and save the board.
 
+### Recipe-Driven Creation
+
+When the caller already has a structured recipe:
+
+1. Build an `EffectRecipe` with the target song, instrument, effects, snapshots, and sections.
+2. Use `create_pedalboard_from_recipe` to convert the recipe into a pedalboard plan.
+3. The tool reuses the existing execution flow and saves through the same HTTP path as other write tools.
+
 The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
 
 ## Features
@@ -36,6 +44,7 @@ The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md
 - `plan_pedalboard_from_prompt`: dry-run pedalboard plan using installed plugins only
 - `create_pedalboard_dry_bundle`: generate a local temporary LV2 pedalboard bundle from a plan; uploads nothing
 - `create_pedalboard_from_prompt`: end-to-end prompt execution path that generates, imports, saves, and reports
+- `create_pedalboard_from_recipe`: structured recipe entry point that converts an `EffectRecipe` into a plan, then executes it through the same HTTP path
 - `execute_pedalboard_plan`: lower-level end-to-end executor for an already planned board
 - `create_new_pedalboard`: write-gated quick path that resets the active board and saves it as a new empty pedalboard
 - `refresh_device_inventory`: first-connection inventory scan that writes the local inventory files
@@ -325,6 +334,7 @@ Build the project and register it as a local MCP server in the Codex environment
 Then ask Codex to use `mod-dwarf-mcp` tools to inspect pedalboards, banks, snapshots, and plugins.
 
 For prompt-driven creation, follow the workflow in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md): discover installed plugins first, decide the effect list and snapshots explicitly, then call `create_pedalboard_from_prompt`.
+For structured recipes, prefer `create_pedalboard_from_recipe` and keep the recipe explicit about sections and snapshot reuse.
 
 ## ChatGPT MCP Usage
 

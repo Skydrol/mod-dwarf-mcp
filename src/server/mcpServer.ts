@@ -21,6 +21,7 @@ import { PluginService } from "../services/pluginService.js";
 import { PedalboardPlannerService } from "../services/pedalboardPlannerService.js";
 import { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
 import { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
+import { EffectRecipeToPedalboardPlanService } from "../services/effectRecipeToPedalboardPlanService.js";
 import { SnapshotService } from "../services/snapshotService.js";
 import { registerTools } from "./toolRegistry.js";
 import type { ToolContext } from "../tools/toolContext.js";
@@ -89,7 +90,9 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
       deps.writeHttp ?? null,
       deps.writeToolsEnabled === true
     ),
-    executePedalboardPlanService: undefined as unknown as ExecutePedalboardPlanService
+    executePedalboardPlanService: undefined as unknown as ExecutePedalboardPlanService,
+    effectRecipeToPedalboardPlanService:
+      undefined as unknown as EffectRecipeToPedalboardPlanService
   };
 
   context.executePedalboardPlanService = new ExecutePedalboardPlanService(
@@ -98,6 +101,9 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     context.pedalboardService,
     context.saveLoadedPedalboardService,
     deps.writeHttp ?? null
+  );
+  context.effectRecipeToPedalboardPlanService = new EffectRecipeToPedalboardPlanService(
+    context.pedalboardPlannerService
   );
 
   void deps.http;

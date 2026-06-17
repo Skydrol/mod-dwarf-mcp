@@ -24,6 +24,20 @@ When a user asks for a pedalboard or tone:
 4. Decide the snapshots you want before calling the builder.
 5. Only after you have a concrete list of effects and snapshots should you call `create_pedalboard_from_prompt` or `execute_pedalboard_plan`.
 
+### Recipe-Driven Use
+
+If the caller already has a structured recipe:
+
+1. Build an `EffectRecipe` with:
+   - song or artist when known
+   - instrument
+   - operation mode
+   - effects with roles and character
+   - snapshots
+   - sections that reuse snapshots
+2. Use `create_pedalboard_from_recipe`.
+3. Let the recipe layer convert into a plan and delegate to the existing execution flow.
+
 ## Rules
 
 - Never assume a pedal exists unless `list_plugins` confirms it.
@@ -54,6 +68,7 @@ For a request like "Smells Like Teen Spirit":
 ## Notes
 
 - `create_pedalboard_from_prompt` is the preferred end-to-end tool.
+- `create_pedalboard_from_recipe` is the structured entry point when the caller already has a recipe.
 - `execute_pedalboard_plan` is the lower-level variant for already planned builds.
 - `plan_pedalboard_from_prompt` remains useful for dry-run inspection.
 - `refresh_device_inventory` is the first-connection inventory helper.
