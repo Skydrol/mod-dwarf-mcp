@@ -39,8 +39,9 @@ export class PedalboardSafetyService {
   ): PlannedPlugin {
     const adjusted = clonePlugin(plugin);
     const pluginLabel = adjusted.name || adjusted.role || adjusted.suggestedInstance;
+    const parameterRanges = adjusted.parameterRanges ?? {};
 
-    for (const [parameter, range] of Object.entries(adjusted.parameterRanges)) {
+    for (const [parameter, range] of Object.entries(parameterRanges)) {
       const current = { ...range };
       const lowered = this.clampRange(plugin, parameter, current, index, pluginCount);
       if (!rangesEqual(current, lowered)) {
@@ -51,9 +52,11 @@ export class PedalboardSafetyService {
           adjustedValue: lowered,
           reason: this.reasonFor(plugin, parameter, current, lowered, index, pluginCount)
         });
-        adjusted.parameterRanges[parameter] = lowered;
+        parameterRanges[parameter] = lowered;
       }
     }
+
+    adjusted.parameterRanges = parameterRanges;
 
     return adjusted;
   }

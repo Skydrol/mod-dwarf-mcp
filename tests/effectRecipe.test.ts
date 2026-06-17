@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pluginCatalog } from "../src/data/pluginCatalog.js";
 import { PluginService } from "../src/services/pluginService.js";
-import { PedalboardPlannerService } from "../src/services/pedalboardPlannerService.js";
 import { EffectRecipeToPedalboardPlanService } from "../src/services/effectRecipeToPedalboardPlanService.js";
 import { createPedalboardFromRecipeTool } from "../src/tools/createPedalboardFromRecipe.js";
 import { effectRecipeSchema } from "../src/schemas/tools.js";
@@ -44,8 +43,12 @@ describe("effectRecipeSchema", () => {
 describe("EffectRecipeToPedalboardPlanService", () => {
   it("converts a recipe into a pedalboard plan and reuses snapshots once", async () => {
     const pluginService = new PluginService(null, pluginCatalog);
-    const planner = new PedalboardPlannerService(pluginService);
-    const converter = new EffectRecipeToPedalboardPlanService(planner);
+    const converter = new EffectRecipeToPedalboardPlanService(
+      pluginService,
+      { load: async () => null } as never,
+      { resolve: async () => ({ parameterRanges: {}, warnings: [], unsupportedIdeas: [], valid: true }) } as never,
+      { adjustPlan: (plan: never) => ({ adjustedPlan: plan, warnings: [], adjustments: [] }) } as never
+    );
 
     const plan = await converter.convert({
       song: "Example Song",
@@ -68,9 +71,50 @@ describe("EffectRecipeToPedalboardPlanService", () => {
     });
 
     expect(plan.operationMode).toBe("modify_current_board");
-    expect(plan.signalChain.length).toBeGreaterThan(0);
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual([
+      "drive",
+      "modulation"
+    ]);
     expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Verse", "Chorus"]);
     expect(plan.notes.join("\n")).toContain("reuses snapshot 'Verse'");
+  });
+
+  it("maps Elephant-style recipes to drive plus modulation without delay or reverb", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const converter = new EffectRecipeToPedalboardPlanService(
+      pluginService,
+      { load: async () => null } as never,
+      { resolve: async () => ({ parameterRanges: {}, warnings: [], unsupportedIdeas: [], valid: true }) } as never,
+      { adjustPlan: (plan: never) => ({ adjustedPlan: plan, warnings: [], adjustments: [] }) } as never
+    );
+
+    const plan = await converter.convert({
+      song: "Elephant",
+      artist: "Tame Impala",
+      instrument: "guitar",
+      operationMode: "replace_current_board",
+      effects: [
+        { role: "drive", character: "fuzzy, saturated, broken-up fuzz", intensity: "strong" },
+        { role: "modulation", character: "phase movement, swirling psychedelic phaser", intensity: "medium" }
+      ],
+      snapshots: [
+        { name: "Verse", description: "Fuzz lower and phase subtle", effectFocus: { drive: "medium", modulation: "subtle" } },
+        { name: "Chorus", description: "Bigger swirl and more intensity", effectFocus: { drive: "strong", modulation: "medium" } }
+      ],
+      sections: [
+        { name: "Verse", snapshot: "Verse" },
+        { name: "Chorus", snapshot: "Chorus" },
+        { name: "Chorus 2", snapshot: "Chorus" }
+      ]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(["drive", "modulation"]);
+    expect(plan.signalChain.map((plugin) => plugin.name)).toEqual([
+      "AIDA-X",
+      "TAP Chorus/Flanger"
+    ]);
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Verse", "Chorus"]);
+    expect(plan.notes.join("\n")).toContain("Section 'Chorus 2' reuses snapshot 'Chorus'.");
   });
 });
 
@@ -115,30 +159,7 @@ describe("createPedalboardFromRecipeTool", () => {
         title: "RecipeBoard"
       },
       {
-        effectRecipeToPedalboardPlanService: {
-          convert: async () =>
-            ({
-              dryRun: true,
-              operationMode: "replace_current_board",
-              safety: {
-                writesFiles: false,
-                modifiesDevice: false,
-                callsPostEndpoints: false
-              },
-              request: {
-                style: "recipe",
-                instrument: "guitar",
-                goals: ["drive: distortion"],
-                referenceArtists: []
-              },
-              template: null,
-              availablePluginCount: 1,
-              signalChain: [],
-              snapshots: [],
-              notes: [],
-              unsupportedIdeas: []
-            }) as never
-        },
+        effectRecipeToPedalboardPlanService: { convert: async () => ({}) } as never,
         executePedalboardPlanService: {
           execute: async (input: { plan: unknown; confirm: boolean; title?: string }) => {
             capturedPlan = input.plan;

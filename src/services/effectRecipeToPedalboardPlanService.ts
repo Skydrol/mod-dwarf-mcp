@@ -1,49 +1,242 @@
-import type { EffectRecipe, PedalboardPlan, PlannedSnapshot } from "../types/plan.js";
-import type { PedalboardPlannerService } from "./pedalboardPlannerService.js";
+import type { EffectRecipe, PedalboardPlan, PlannedPlugin, PlannedSnapshot } from "../types/plan.js";
+import type { PluginService } from "./pluginService.js";
+import type { PluginKnowledgeDbService } from "./pluginKnowledgeDbService.js";
+import type { RoleParameterProfileService } from "./roleParameterProfileService.js";
+import type { PedalboardSafetyService } from "./pedalboardSafetyService.js";
+
+interface PluginCandidate {
+  name: string;
+  uri?: string;
+}
 
 export class EffectRecipeToPedalboardPlanService {
-  constructor(private readonly plannerService: PedalboardPlannerService) {}
+  constructor(
+    private readonly pluginService: PluginService,
+    private readonly knowledgeDbService: PluginKnowledgeDbService,
+    private readonly profileService: RoleParameterProfileService,
+    private readonly safetyService: PedalboardSafetyService
+  ) {}
 
   async convert(recipe: EffectRecipe): Promise<PedalboardPlan> {
-    const plan = await this.plannerService.planFromPrompt({
-      style: recipe.song ?? recipe.artist ?? "recipe",
-      instrument: recipe.instrument,
-      goals: recipe.effects.map((effect) => `${effect.role}: ${effect.character}`),
-      referenceArtists: recipe.artist ? [recipe.artist] : []
-    });
+    const pluginList = await this.pluginService.listPlugins("both");
+    const knowledgeDb = await this.knowledgeDbService.load();
+    const plugins = pluginList.plugins
+      .map((plugin) => ({ name: plugin.name ?? plugin.uri ?? "", uri: plugin.uri }))
+      .filter((plugin) => plugin.name.length > 0);
 
-    const snapshots = dedupeSnapshots(
-      recipe.snapshots.length > 0 ? recipe.snapshots.map(recipeSnapshotToPlan) : plan.snapshots
-    );
-    const sectionSnapshotNames = new Set(recipe.sections.map((section) => section.snapshot));
-    const missingSnapshots = recipe.sections
-      .map((section) => section.snapshot)
-      .filter((snapshotName) => !snapshots.some((snapshot) => snapshot.name === snapshotName));
+    const chain = await this.buildChain(recipe, plugins, knowledgeDb);
+    const snapshots = dedupeSnapshots(recipe.snapshots.map(recipeSnapshotToPlan));
+    const snapshotNames = new Set(snapshots.map((snapshot) => snapshot.name));
 
-    return {
-      ...plan,
+    const basePlan: PedalboardPlan = {
+      dryRun: true,
       operationMode: recipe.operationMode,
+      safety: {
+        writesFiles: false,
+        modifiesDevice: false,
+        callsPostEndpoints: false
+      },
       request: {
         style: recipe.song ?? recipe.artist ?? "recipe",
         instrument: recipe.instrument,
         goals: recipe.effects.map((effect) => recipeEffectGoal(effect)),
         referenceArtists: recipe.artist ? [recipe.artist] : []
       },
+      template: null,
+      availablePluginCount: pluginList.count,
+      signalChain: chain,
       snapshots,
       notes: [
-        ...plan.notes,
-        ...recipe.sections.map(
-          (section) => `Section '${section.name}' reuses snapshot '${section.snapshot}'.`
-        ),
-        ...(sectionSnapshotNames.size > 0
-          ? [`Recipe snapshot reuse count: ${sectionSnapshotNames.size}.`]
+        "Recipe-driven plan only; no files were written and no POST/PUT/PATCH/DELETE endpoints were called.",
+        "Recipe effects are mapped directly to installed plugins where possible.",
+        "Sections reuse snapshots by name; repeated sections do not duplicate snapshot definitions."
+      ],
+      unsupportedIdeas: []
+    };
+
+    const safety = this.safetyService.adjustPlan(basePlan);
+    return {
+      ...safety.adjustedPlan,
+      notes: [
+        ...safety.adjustedPlan.notes,
+        ...(recipe.sections.length > 0
+          ? recipe.sections.map(
+              (section) => `Section '${section.name}' reuses snapshot '${section.snapshot}'.`
+            )
           : []),
-        ...(missingSnapshots.length > 0
-          ? [`Recipe referenced missing snapshots: ${dedupe(missingSnapshots).join(", ")}.`]
+        ...(snapshotNames.size > 0
+          ? [`Recipe snapshot count: ${snapshotNames.size}.`]
           : [])
       ]
     };
   }
+
+  private async buildChain(
+    recipe: EffectRecipe,
+    plugins: PluginCandidate[],
+    knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+  ): Promise<PlannedPlugin[]> {
+    const chain: PlannedPlugin[] = [];
+
+    for (let index = 0; index < recipe.effects.length; index += 1) {
+      const effect = recipe.effects[index];
+      const selected = this.pickForRecipe(effect.role, effect.character, plugins, knowledgeDb);
+      if (!selected) continue;
+
+      const ports = selected.uri
+        ? await this.pluginService.getPluginPorts(selected.uri)
+        : { uri: "", ports: [], audioInputs: [], audioOutputs: [], controlInputs: [] };
+      const profile = this.profileService.resolve(
+        recipeRoleToPlannerRole(effect.role),
+        selected.name,
+        selected.uri,
+        ports,
+        `${recipe.song ?? ""} ${recipe.artist ?? ""} ${effect.character}`
+      );
+
+      chain.push({
+        role: effect.role,
+        name: selected.name,
+        uri: selected.uri,
+        reason: effect.character,
+        suggestedInstance: `${slug(effect.role)}_${index + 1}`,
+        parameterRanges: profile.parameterRanges ?? {}
+      });
+    }
+
+    return chain;
+  }
+
+  private pickForRecipe(
+    role: string,
+    character: string,
+    plugins: PluginCandidate[],
+    knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+  ): PluginCandidate | null {
+    const preferred = preferredNamesForRoleAndCharacter(role, character);
+    const directMatch = findPreferredPlugin(plugins, preferred);
+    if (directMatch) return directMatch;
+
+    const scored = plugins
+      .map((plugin) => ({
+        plugin,
+        score: scoreRecipeCandidate(plugin, preferred, knowledgeDb)
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score || left.plugin.name.localeCompare(right.plugin.name));
+    return scored[0]?.plugin ?? null;
+  }
+}
+
+function preferredNamesForRecipe(normalized: string): string[] {
+  if (matches(normalized, ["drive", "fuzz", "dist", "dirty", "broken", "psychedelic"])) {
+    return ["AIDA-X", "Gain 2x2", "Gain"];
+  }
+  if (matches(normalized, ["modulation", "phaser", "swirl", "movement"])) {
+    return ["TAP Chorus/Flanger"];
+  }
+  if (matches(normalized, ["delay", "echo"])) {
+    return ["Bollie Delay"];
+  }
+  if (matches(normalized, ["reverb", "space", "hall", "plate"])) {
+    return ["Dragonfly Hall Reverb", "MVerb"];
+  }
+  if (matches(normalized, ["output", "level", "trim"])) {
+    return ["Gain 2x2", "Gain", "TinyGain Stereo"];
+  }
+  return ["Gain", "Gain 2x2"];
+}
+
+function preferredNamesForRoleAndCharacter(role: string, character: string): string[] {
+  const normalizedRole = normalize(role);
+  const normalizedCharacter = normalize(character);
+
+  if (matches(normalizedRole, ["drive", "fuzz", "dist", "overdrive", "saturation"])) {
+    return ["AIDA-X", "Gain 2x2", "Gain"];
+  }
+  if (matches(normalizedRole, ["modulation", "phaser", "chorus"])) {
+    return ["TAP Chorus/Flanger"];
+  }
+  if (matches(normalizedRole, ["delay", "echo"])) {
+    return ["Bollie Delay"];
+  }
+  if (matches(normalizedRole, ["reverb", "space", "hall", "plate"])) {
+    return ["Dragonfly Hall Reverb", "MVerb"];
+  }
+  if (matches(normalizedRole, ["output", "level", "trim"])) {
+    return ["Gain 2x2", "Gain", "TinyGain Stereo"];
+  }
+
+  if (matches(normalizedCharacter, ["fuzz", "dist", "dirty", "broken", "psychedelic"])) {
+    return ["AIDA-X", "Gain 2x2", "Gain"];
+  }
+  if (matches(normalizedCharacter, ["phaser", "chorus", "swirl", "movement"])) {
+    return ["TAP Chorus/Flanger"];
+  }
+
+  return preferredNamesForRecipe(normalize(`${role} ${character}`));
+}
+
+function findPreferredPlugin(plugins: PluginCandidate[], preferred: string[]): PluginCandidate | null {
+  for (const target of preferred) {
+    const normalizedTarget = normalize(target);
+    const exact = plugins.find((plugin) => {
+      const normalizedName = normalize(plugin.name);
+      const normalizedUri = normalize(plugin.uri ?? "");
+      return (
+        normalizedName === normalizedTarget ||
+        normalizedUri === normalizedTarget ||
+        normalizedName.includes(normalizedTarget) ||
+        normalizedUri.includes(normalizedTarget)
+      );
+    });
+    if (exact) return exact;
+  }
+  return null;
+}
+
+function scoreRecipeCandidate(
+  plugin: PluginCandidate,
+  preferred: string[],
+  knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+): number {
+  const normalizedName = normalize(plugin.name);
+  const normalizedUri = normalize(plugin.uri ?? "");
+  let score = 0;
+
+  for (let index = 0; index < preferred.length; index += 1) {
+    const target = normalize(preferred[index]);
+    if (normalizedName === target || normalizedUri === target) {
+      score += 100 - index * 10;
+      break;
+    }
+    if (normalizedName.includes(target) || normalizedUri.includes(target)) {
+      score += 60 - index * 5;
+    }
+  }
+
+  const entry = knowledgeDb?.plugins.find(
+    (item) => normalize(item.name) === normalizedName || normalize(item.uri) === normalizedUri
+  );
+  if (!entry) return score;
+
+  if (entry.goodFor.length > 0) score += 2;
+  if (entry.plannerNotes.length > 0) score += 1;
+  return score;
+}
+
+function recipeRoleToPlannerRole(role: string): string {
+  const normalized = normalize(role);
+  if (normalized.includes("drive") || normalized.includes("fuzz") || normalized.includes("dist")) {
+    return "high gain drive";
+  }
+  if (normalized.includes("mod") || normalized.includes("phaser") || normalized.includes("chorus")) {
+    return "modulation";
+  }
+  if (normalized.includes("delay")) return "delay";
+  if (normalized.includes("reverb")) return "reverb";
+  if (normalized.includes("output")) return "output level";
+  return "core tone";
 }
 
 function dedupeSnapshots(snapshots: PlannedSnapshot[]): PlannedSnapshot[] {
@@ -69,8 +262,19 @@ function recipeEffectGoal(effect: EffectRecipe["effects"][number]): string {
   return `${effect.role}: ${effect.character}${effect.intensity ? ` (${effect.intensity})` : ""}`;
 }
 
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values));
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function matches(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(normalize(needle)));
+}
+
+function slug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
 }
 
 function stringifyValue(value: unknown): string {

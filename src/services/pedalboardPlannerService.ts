@@ -303,7 +303,7 @@ export class PedalboardPlannerService {
     }
 
     roles.push({
-      role: "output trim",
+      role: "output level",
       preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
       reason: "Final trim before hardware outputs.",
       requiresProfile: true

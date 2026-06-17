@@ -22,6 +22,9 @@ import { PedalboardPlannerService } from "../services/pedalboardPlannerService.j
 import { SaveLoadedPedalboardService } from "../services/saveLoadedPedalboardService.js";
 import { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
 import { EffectRecipeToPedalboardPlanService } from "../services/effectRecipeToPedalboardPlanService.js";
+import { PluginKnowledgeDbService } from "../services/pluginKnowledgeDbService.js";
+import { RoleParameterProfileService } from "../services/roleParameterProfileService.js";
+import { PedalboardSafetyService } from "../services/pedalboardSafetyService.js";
 import { SnapshotService } from "../services/snapshotService.js";
 import { registerTools } from "./toolRegistry.js";
 import type { ToolContext } from "../tools/toolContext.js";
@@ -103,7 +106,10 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     deps.writeHttp ?? null
   );
   context.effectRecipeToPedalboardPlanService = new EffectRecipeToPedalboardPlanService(
-    context.pedalboardPlannerService
+    context.pluginService,
+    new PluginKnowledgeDbService(),
+    new RoleParameterProfileService(),
+    new PedalboardSafetyService()
   );
 
   void deps.http;
