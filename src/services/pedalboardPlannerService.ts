@@ -126,7 +126,26 @@ export class PedalboardPlannerService {
   private decideOperationMode(promptText: string): PedalboardOperationMode {
     const text = promptText.toLowerCase();
 
-    if (matches(text, ["parameter only", "just change parameters", "change parameters only"])) {
+    if (
+      matches(text, [
+        "parameter only",
+        "just change parameters",
+        "change parameters only",
+        "diminuir",
+        "reduzir",
+        "menos saturacao",
+        "saturacao",
+        "saturation",
+        "lower saturation",
+        "less saturation",
+        "reduce saturation",
+        "reduce the saturation",
+        "too saturated",
+        "less distorted",
+        "dial back saturation",
+        "turn down saturation"
+      ])
+    ) {
       return "parameter_only";
     }
 
@@ -170,6 +189,21 @@ export class PedalboardPlannerService {
     const isShineOn = matches(text, ["shine on you crazy diamond"]);
     const isLetItHappenBoard = matches(text, ["let it happen"]);
     const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
+    const isSaturationReduction = matches(text, [
+      "diminuir",
+      "reduzir",
+      "menos saturacao",
+      "saturacao",
+      "saturation",
+      "lower saturation",
+      "less saturation",
+      "reduce saturation",
+      "reduce the saturation",
+      "too saturated",
+      "less distorted",
+      "dial back saturation",
+      "turn down saturation"
+    ]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
       "infinite",
@@ -193,6 +227,23 @@ export class PedalboardPlannerService {
           requiresProfile: true
         }
       ];
+    }
+
+    if (isSaturationReduction) {
+      return dedupeRoles([
+        {
+          role: "input gain",
+          preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
+          reason: "Lower the level hitting the chain to reduce saturation.",
+          requiresProfile: true
+        },
+        {
+          role: "output level",
+          preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
+          reason: "Bring the overall level back to a controlled output after reducing drive.",
+          requiresProfile: true
+        }
+      ]);
     }
 
     if (isElephant) {
@@ -779,6 +830,29 @@ export class PedalboardPlannerService {
           name: "Outro",
           description: "Closing ambient fade.",
           parameterFocus: { delay: "long", reverb: "wide and long" }
+        }
+      ];
+    }
+    if (
+      matches(text, [
+        "diminuir",
+        "reduzir",
+        "menos saturacao",
+        "saturacao",
+        "saturation",
+        "lower saturation",
+        "less saturation",
+        "reduce saturation",
+        "too saturated",
+        "dial back saturation",
+        "turn down saturation"
+      ])
+    ) {
+      return [
+        {
+          name: "Reduced Saturation",
+          description: "Pull back the level and tame the drive without changing the chain.",
+          parameterFocus: { gain: "lower input drive", output: "slightly lower level" }
         }
       ];
     }
