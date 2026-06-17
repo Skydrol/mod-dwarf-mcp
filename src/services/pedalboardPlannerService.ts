@@ -125,27 +125,8 @@ export class PedalboardPlannerService {
 
   private decideOperationMode(promptText: string): PedalboardOperationMode {
     const text = promptText.toLowerCase();
-    const adjustment = classifyAdjustmentIntent(text);
-
-    if (adjustment === "parameter_only") {
+    if (matches(text, ["parameter only", "just change parameters", "change parameters only"])) {
       return "parameter_only";
-    }
-
-    if (adjustment === "modify_current_board") {
-      return "modify_current_board";
-    }
-
-    if (
-      matches(text, [
-        "parameter only",
-        "just change parameters",
-        "change parameters only",
-        "modify current board",
-        "keep current board",
-        "adjust current board"
-      ])
-    ) {
-      return "modify_current_board";
     }
 
     if (matches(text, ["modify current board", "keep current board", "adjust current board"])) {
@@ -188,35 +169,8 @@ export class PedalboardPlannerService {
     const isShineOn = matches(text, ["shine on you crazy diamond"]);
     const isLetItHappenBoard = matches(text, ["let it happen"]);
     const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
-    const isSaturationReduction = matches(text, [
-      "saturation",
-      "lower saturation",
-      "less saturation",
-      "reduce saturation",
-      "reduce the saturation",
-      "too saturated",
-      "less distorted",
-      "dial back saturation",
-      "turn down saturation"
-    ]);
-    const adjustment = classifyAdjustmentIntent(text);
+    const isSaturationReduction = false;
     const toneComplaint = classifyToneComplaint(text);
-    const requiresEffectSubstitution = adjustment === "modify_current_board";
-    const explicitSubstitution = matches(text, [
-      "replace",
-      "swap",
-      "change the pedal",
-      "change effect",
-      "remove this effect",
-      "remove the effect",
-      "another effect",
-      "different effect",
-      "less saturated effect",
-      "lighter drive",
-      "less aggressive drive",
-      "swap the effect",
-      "replace the effect"
-    ]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
       "infinite",
@@ -243,17 +197,6 @@ export class PedalboardPlannerService {
     }
 
     if (isSaturationReduction) {
-      if (requiresEffectSubstitution) {
-        return dedupeRoles([
-          {
-            role: "high gain drive",
-            preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur", "Big Muff"],
-            reason: "Replace the current saturation source with a lighter or less aggressive installed alternative.",
-            requiresProfile: true
-          },
-          cabinetRole()
-        ]);
-      }
       return dedupeRoles([
         {
           role: "input gain",
@@ -267,59 +210,6 @@ export class PedalboardPlannerService {
           reason: "Bring the overall level back to a controlled output after reducing drive.",
           requiresProfile: true
         }
-      ]);
-    }
-
-    if (adjustment === "modify_current_board" && (toneComplaint !== null || explicitSubstitution)) {
-      if (toneComplaint === "harsh") {
-        return dedupeRoles([
-          {
-            role: "output level",
-            preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
-            reason: "Swap or soften the final stage to reduce harshness.",
-            requiresProfile: true
-          },
-          cabinetRole()
-        ]);
-      }
-
-      if (toneComplaint === "muddy") {
-        return dedupeRoles([
-          {
-            role: "input gain",
-            preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
-            reason: "Swap to a tighter front-end stage to clean up the low end.",
-            requiresProfile: true
-          },
-          cabinetRole()
-        ]);
-      }
-
-      if (toneComplaint === "echoing") {
-        return dedupeRoles([
-          {
-            role: "delay",
-            preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
-            reason: "Replace the current echo source with a more controlled delay choice.",
-            requiresProfile: true
-          },
-          {
-            role: "reverb",
-            preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
-            reason: "Tame excessive ambience by choosing a better-matched reverb.",
-            requiresProfile: true
-          }
-        ]);
-      }
-
-      return dedupeRoles([
-        {
-          role: "high gain drive",
-          preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur", "Big Muff"],
-          reason: "Replace the current effect with a different installed drive that better fits the adjustment request.",
-          requiresProfile: true
-        },
-        cabinetRole()
       ]);
     }
 
@@ -1110,58 +1000,6 @@ function promptTextFor(input: PedalboardPlanInput): string {
 
 function matches(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
-}
-
-function classifyAdjustmentIntent(text: string): "parameter_only" | "modify_current_board" | null {
-  const explicitParameterOnly = matches(text, [
-    "parameter only",
-    "just change parameters",
-    "change parameters only"
-  ]);
-  const substitutionCue = matches(text, [
-    "replace",
-    "swap",
-    "change the pedal",
-    "change effect",
-    "remove this effect",
-    "remove the effect",
-    "another effect",
-    "different effect",
-    "less saturated effect",
-    "lighter drive",
-    "less aggressive drive",
-    "swap the effect",
-    "replace the effect"
-  ]);
-  const complaintCue = classifyToneComplaint(text) !== null || matches(text, [
-    "lower saturation",
-    "less saturation",
-    "reduce saturation",
-    "reduce the saturation",
-    "too saturated",
-    "less distorted",
-    "dial back saturation",
-    "turn down saturation",
-    "increase brightness",
-    "reduce brightness",
-    "less bright",
-    "more bright",
-    "too bright",
-    "less harsh",
-    "too harsh",
-    "more defined",
-    "less muddy",
-    "too muddy",
-    "less echo",
-    "too much echo",
-    "less reverb",
-    "too much reverb",
-    "less delay",
-    "too much delay"
-  ]);
-  if (substitutionCue) return "modify_current_board";
-  if (explicitParameterOnly || complaintCue) return "parameter_only";
-  return null;
 }
 
 function classifyToneComplaint(text: string): "harsh" | "muddy" | "echoing" | null {

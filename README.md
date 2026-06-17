@@ -19,10 +19,12 @@ On first use with a connected MOD Dwarf:
 
 For a user prompt like "Smells Like Teen Spirit":
 
-1. Discover installed plugins first.
-2. Translate the request to English before interpreting it if the user wrote in another language.
-3. Decide the effect list and snapshots explicitly.
-4. Use `create_pedalboard_from_prompt` to build and save the board.
+1. Translate the request to English before interpreting it if the user wrote in another language.
+2. Decide the effect list and change list yourself.
+3. Research the target tone if the prompt depends on song-specific or artist-specific references.
+4. Discover installed plugins with `list_plugins`.
+5. Cross your own effect list against the installed plugins and adapt it to the device.
+6. Use `create_pedalboard_from_prompt` to build and save the board.
 
 ### Recipe-Driven Creation
 

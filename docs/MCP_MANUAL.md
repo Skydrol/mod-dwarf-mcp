@@ -18,12 +18,12 @@ When you connect to a MOD Dwarf for the first time in a session:
 
 When a user asks for a pedalboard or tone:
 
-1. Call `list_plugins` if you have not already done so in this session.
-2. Translate the user request to English before you interpret it or call the MCP.
-3. Generate your own suggested effect list first.
-4. If the request depends on external musical knowledge, you may research it separately before asking MCP to build anything.
-5. Decide the snapshots you want before calling the builder.
-6. Only after you have a concrete list of effects and snapshots should you call `create_pedalboard_from_prompt` or `execute_pedalboard_plan`.
+1. Translate the user request to English before you interpret it or call the MCP.
+2. Decide the effect list and change list yourself. The MCP should not invent the musical plan for you.
+3. If you need outside musical knowledge, research it before calling the MCP.
+4. Call `list_plugins` if you have not already done so in this session.
+5. Cross your own effect list against the installed plugins and adapt it to what the device actually has.
+6. Only after you have an adapted list of effects and snapshots should you call `create_pedalboard_from_prompt` or `execute_pedalboard_plan`.
 
 ### Recipe-Driven Use
 
@@ -46,6 +46,7 @@ If the caller already has a structured recipe:
 - If the exact reference pedal is missing, choose the closest installed substitute and say so.
 - Do not ask the MCP to guess the musical intent for you. Provide the target effects and snapshots explicitly.
 - Translate the user request to English before using the MCP if the original prompt is in another language.
+- Research external musical references before calling the MCP when the request depends on song-specific or artist-specific knowledge that is not already obvious.
 - Use `create_new_pedalboard` only for a truly empty board.
 - Do not skip the plugin discovery step on the first use of a device.
 - Keep a local mental model of the inventory and reuse it instead of rediscovering everything every time.
@@ -54,18 +55,20 @@ If the caller already has a structured recipe:
 
 For a request like "Smells Like Teen Spirit":
 
-1. Discover installed plugins.
+1. Translate the request to English if needed.
 2. Research the reference tone if needed.
 3. Decide the likely target chain, for example:
    - distortion or fuzz stage
    - chorus or modulation stage
    - output trim if the chain needs it
-4. Decide the snapshots, for example:
+4. Call `list_plugins`.
+5. Cross the intended chain against the installed plugins and substitute the closest available pedals.
+6. Decide the snapshots, for example:
    - Verse
    - Chorus
    - Lead
-5. Provide the explicit list of target effects and snapshots to the MCP.
-6. Let the MCP build and save the board.
+7. Provide the explicit list of adapted effects and snapshots to the MCP.
+8. Let the MCP build and save the board.
 
 ## Notes
 

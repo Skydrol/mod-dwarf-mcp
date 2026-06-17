@@ -100,9 +100,10 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
 
   context.executePedalboardPlanService = new ExecutePedalboardPlanService(
     context.dryBundleService,
-    context.importBundleService,
+    context.liveGraphAuthoringPlanService,
     context.pedalboardService,
     context.saveLoadedPedalboardService,
+    context.clearCurrentPedalboardService,
     deps.writeHttp ?? null
   );
   context.effectRecipeToPedalboardPlanService = new EffectRecipeToPedalboardPlanService(

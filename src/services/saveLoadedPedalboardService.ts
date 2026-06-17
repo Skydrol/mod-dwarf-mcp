@@ -19,6 +19,7 @@ export class SaveLoadedPedalboardService {
     expectedPluginUris?: string[];
     loadedBundlePath?: string;
     inspectSavedBundle?: boolean;
+    skipLoadedGraphValidation?: boolean;
   }): Promise<SaveLoadedPedalboardResult> {
     const title = input.title.trim();
 
@@ -36,7 +37,9 @@ export class SaveLoadedPedalboardService {
       ]);
     }
 
-    const loadedGraphValidation = await this.validateExpectedLoadedGraph(input);
+    const loadedGraphValidation = input.skipLoadedGraphValidation
+      ? undefined
+      : await this.validateExpectedLoadedGraph(input);
     if (loadedGraphValidation && !loadedGraphValidation.success) {
       return {
         writeToolsEnabled: true,
@@ -206,19 +209,27 @@ export class SaveLoadedPedalboardService {
             .filter((uri): uri is string => Boolean(uri))
         : [];
       const missingPluginUris = expectedPluginUris.filter((uri) => !actualPluginUris.includes(uri));
+      const unexpectedPluginUris = actualPluginUris.filter((uri) => !expectedPluginUris.includes(uri));
       return {
         attempted: true,
-        success: actualPluginUris.length > 0 && missingPluginUris.length === 0,
+        success:
+          actualPluginUris.length > 0 &&
+          missingPluginUris.length === 0 &&
+          unexpectedPluginUris.length === 0 &&
+          actualPluginUris.length === expectedPluginUris.length,
         bundlePath: bundlePath ?? "active",
         pluginCount: actualPluginUris.length,
         expectedPluginUris,
         actualPluginUris,
         missingPluginUris,
+        unexpectedPluginUris,
         error:
           actualPluginUris.length === 0
             ? "MOD UI reports zero plugins for the active graph"
             : missingPluginUris.length > 0
               ? "Active graph is missing expected plugin URIs"
+              : unexpectedPluginUris.length > 0
+                ? "Active graph includes unexpected plugin URIs"
               : undefined
       };
     } catch (error) {

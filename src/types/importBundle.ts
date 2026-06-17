@@ -15,6 +15,7 @@ export interface LoadedGraphValidation {
   expectedPluginUris: string[];
   actualPluginUris: string[];
   missingPluginUris: string[];
+  unexpectedPluginUris?: string[];
   error?: string;
 }
 

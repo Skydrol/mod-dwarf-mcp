@@ -285,19 +285,27 @@ export class ImportBundleService {
             .filter((uri): uri is string => Boolean(uri))
         : [];
       const missingPluginUris = expectedPluginUris.filter((uri) => !actualPluginUris.includes(uri));
+      const unexpectedPluginUris = actualPluginUris.filter((uri) => !expectedPluginUris.includes(uri));
       return {
         attempted: true,
-        success: actualPluginUris.length > 0 && missingPluginUris.length === 0,
+        success:
+          actualPluginUris.length > 0 &&
+          missingPluginUris.length === 0 &&
+          unexpectedPluginUris.length === 0 &&
+          actualPluginUris.length === expectedPluginUris.length,
         bundlePath,
         pluginCount: actualPluginUris.length,
         expectedPluginUris,
         actualPluginUris,
         missingPluginUris,
+        unexpectedPluginUris,
         error:
           actualPluginUris.length === 0
             ? "MOD UI resolved the imported bundle as zero plugins"
             : missingPluginUris.length > 0
               ? "Loaded graph is missing expected plugin URIs"
+              : unexpectedPluginUris.length > 0
+                ? "Loaded graph includes unexpected plugin URIs"
               : undefined
       };
     } catch (error) {

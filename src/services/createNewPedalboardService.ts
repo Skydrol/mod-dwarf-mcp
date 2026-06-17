@@ -3,8 +3,6 @@ import type { CreateNewPedalboardResult } from "../types/createNewPedalboard.js"
 
 const RESET_ENDPOINT = "/reset";
 const SAVE_ENDPOINT = "/pedalboard/save";
-const LOAD_BUNDLE_ENDPOINT = "/pedalboard/load_bundle/";
-
 export class CreateNewPedalboardService {
   constructor(
     private readonly writeApi: WriteHttpClient | null,
@@ -64,8 +62,6 @@ export class CreateNewPedalboardService {
       };
     }
 
-    const load = await this.callLoadBundle(save.bundlePath);
-
     return {
       writeToolsEnabled: true,
       confirmed: true,
@@ -77,9 +73,7 @@ export class CreateNewPedalboardService {
       directFileWrites: false,
       notes: [
         "Called /reset first, then /pedalboard/save with asNew=1.",
-        load.success
-          ? "Loaded the saved bundle once more so connected UIs can refresh the title."
-          : `Saved the board, but the title refresh load failed: ${load.error}`
+        "Did not reload the saved bundle after save, to avoid mutating the live graph."
       ]
     };
   }
@@ -160,25 +154,6 @@ export class CreateNewPedalboardService {
         attempted: true,
         success: false,
         endpoint: SAVE_ENDPOINT,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-
-  private async callLoadBundle(bundlePath: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.writeApiOrThrow().postForm(
-        LOAD_BUNDLE_ENDPOINT,
-        { bundlepath: bundlePath },
-        "reload the saved pedalboard so connected UIs refresh the title"
-      );
-      if (response.ok) {
-        return { success: true };
-      }
-      return { success: false, error: `HTTP ${response.status} from ${LOAD_BUNDLE_ENDPOINT}` };
-    } catch (error) {
-      return {
-        success: false,
         error: error instanceof Error ? error.message : String(error)
       };
     }
