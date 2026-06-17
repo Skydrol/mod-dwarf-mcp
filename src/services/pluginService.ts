@@ -56,16 +56,6 @@ export class PluginService {
     if (cached) {
       return normalizeCatalogEntry(cached);
     }
-    const inventory = await loadDeviceInventory();
-    if (inventory?.plugins?.some((plugin) => plugin.uri === uri || plugin.name === uri)) {
-      return {
-        uri,
-        ports: [],
-        audioInputs: [],
-        audioOutputs: [],
-        controlInputs: []
-      };
-    }
     if (!this.ssh) {
       throw new Error(
         `Plugin metadata not found in local catalog and no SSH fallback is configured: ${uri}`
