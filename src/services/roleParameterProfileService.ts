@@ -130,6 +130,16 @@ export class RoleParameterProfileService {
       };
     }
 
+    if (normalizedRole === "fuzz") {
+      return {
+        entries: [
+          { candidates: ["PREGAIN"], safeRange: { min: -6, max: 0, unit: "dB" }, required: true },
+          { candidates: ["MASTER"], safeRange: { min: -6, max: 0, unit: "dB" }, required: true },
+          { candidates: ["TONE"], safeRange: { min: -2, max: 2 }, required: false }
+        ]
+      };
+    }
+
     if (normalizedRole === "cabinet") {
       if (normalizedPlugin.includes("vintagecabinets")) {
         return {

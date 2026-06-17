@@ -158,7 +158,17 @@ export class PedalboardPlannerService {
 
   private rolesFor(input: PedalboardPlanInput): RoleSpec[] {
     const text = promptTextFor(input);
-    const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
+    const isU2NewYearsDay = matches(text, ["u2", "new year's day", "new years day"]);
+    const isComfortablyNumb = matches(text, ["comfortably numb", "david gilmour", "pink floyd"]);
+    const isMasterOfPuppets = matches(text, ["master of puppets", "metallica"]);
+    const isElephant = matches(text, ["elephant"]);
+    const isSigurRos = matches(text, ["sigur ros", "sigur rós"]);
+    const isKhruangbin = matches(text, ["khruangbin"]);
+    const isTomMorello = matches(text, ["tom morello"]);
+    const isShoegaze = matches(text, ["shoegaze"]);
+    const isModernRockBass = matches(text, ["modern rock bass", "bass guitar"]);
+    const isShineOn = matches(text, ["shine on you crazy diamond"]);
+    const isLetItHappenBoard = matches(text, ["let it happen"]);
     const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
@@ -183,6 +193,255 @@ export class PedalboardPlannerService {
           requiresProfile: true
         }
       ];
+    }
+
+    if (isElephant) {
+      return dedupeRoles([
+        {
+          role: "fuzz",
+          preferred: ["Big Muff", "GxSuperFuzz", "Fuzz", "GxFuzzFaceFullerMod"],
+          reason: "Core fuzzy riff texture for Elephant.",
+          requiresProfile: false
+        },
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur"],
+          reason: "Aggressive drive or amp-like push behind the fuzz.",
+          requiresProfile: true
+        },
+        cabinetRole()
+      ]);
+    }
+
+    if (isU2NewYearsDay) {
+      return dedupeRoles([
+        {
+          role: "clean tone shaper",
+          preferred: ["Gain", "Gain 2x2", "TinyGain Stereo", "Volume"],
+          reason: "Keeps the core tone clean and articulate for the intro and verse.",
+          requiresProfile: false
+        },
+        {
+          role: "modulation",
+          preferred: ["TAP Chorus/Flanger", "CS Chorus 1", "Phaser", "GxFlanger"],
+          reason: "Subtle chorus width for the song's signature guitar texture.",
+          requiresProfile: true
+        },
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Rhythmic echo support for the spacious parts.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Adds the ambient tail that supports the wide U2-style sound.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isComfortablyNumb) {
+      return dedupeRoles([
+        {
+          role: "dynamics",
+          preferred: ["ZamComp", "Compressor St", "Compressor M", "GxCompressor"],
+          reason: "Smooths the front of the guitar tone for Gilmour-style sustain.",
+          requiresProfile: false
+        },
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur"],
+          reason: "Moderate lead drive for the song's saturated passages.",
+          requiresProfile: true
+        },
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Spacious repeats for the solo lines.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "Plate Reverb", "TAL-Reverb-II"],
+          reason: "Wide ambient tail supporting the lead tone.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isMasterOfPuppets) {
+      return dedupeRoles([
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "DS1", "GxSD1", "GxTubeScreamer", "Big Muff"],
+          reason: "Aggressive rhythm saturation for the iconic thrash tone.",
+          requiresProfile: true
+        },
+        cabinetRole()
+      ]);
+    }
+
+    if (isSigurRos) {
+      return dedupeRoles([
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Long, spacious repeats for the ambient bed.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Huge washed tail for Sigur Ros-style ambience.",
+          requiresProfile: true
+        },
+        {
+          role: "modulation",
+          preferred: ["TAP Chorus/Flanger", "CS Chorus 1", "Phaser", "GxFlanger"],
+          reason: "Slow movement and shimmer in the texture.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isKhruangbin) {
+      return dedupeRoles([
+        {
+          role: "dynamics",
+          preferred: ["ZamComp", "Compressor St", "Compressor M", "GxCompressor"],
+          reason: "Keeps the clean funk attack even and controlled.",
+          requiresProfile: false
+        },
+        {
+          role: "clean tone shaper",
+          preferred: ["Gain", "Gain 2x2", "TinyGain Stereo", "Volume"],
+          reason: "Clean core tone for articulate psychedelic funk playing.",
+          requiresProfile: false
+        },
+        {
+          role: "modulation",
+          preferred: ["TAP Chorus/Flanger", "CS Chorus 1", "Phaser", "GxPhaser"],
+          reason: "Subtle psychedelic movement without high gain.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isTomMorello) {
+      return dedupeRoles([
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "DS1", "GxSD1", "GxTubeScreamer", "Big Muff"],
+          reason: "Distinctive rock drive as the core of the tone.",
+          requiresProfile: true
+        },
+        {
+          role: "wah",
+          preferred: ["WAH-1", "Pedal Taster", "Wah", "Kuiza"],
+          reason: "Optional rhythmic wah filtering for Morello-style sounds.",
+          requiresProfile: false
+        },
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Optional delay for lead textures and rhythmic accents.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isShoegaze) {
+      return dedupeRoles([
+        {
+          role: "drive",
+          preferred: ["AIDA-X", "Big Muff", "Fuzz", "GxSuperFuzz"],
+          reason: "Thick fuzz for the wall-of-sound layer.",
+          requiresProfile: true
+        },
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Long repeats and diffusion for the wash.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Huge space to blur the guitar texture.",
+          requiresProfile: true
+        },
+        {
+          role: "modulation",
+          preferred: ["TAP Chorus/Flanger", "CS Chorus 1", "Phaser", "GxFlanger"],
+          reason: "Extra width and motion in the ambient wall.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isModernRockBass) {
+      return dedupeRoles([
+        {
+          role: "dynamics",
+          preferred: ["ZamComp", "GxCompressor", "Compressor St", "Compressor M"],
+          reason: "Even bass level and better note definition.",
+          requiresProfile: true
+        },
+        {
+          role: "bass amp/cab character",
+          preferred: ["Vintage Cabinets", "MOD Cabinet", "GxAlembic", "Cabinet Loader"],
+          reason: "Bass-focused low-end body and speaker shape.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (matches(text, ["self oscillating"])) {
+      return dedupeRoles([
+        {
+          role: "feedback-capable delay",
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST", "Modulay"],
+          reason: "Delay chosen specifically for safe feedback-heavy oscillation behavior.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Ambient tail to support the oscillating delay bed.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (isShineOn) {
+      return dedupeRoles([
+        {
+          role: "dynamics",
+          preferred: ["ZamComp", "GxCompressor", "Compressor St", "Compressor M"],
+          reason: "Keeps the clean guitar line even and musical.",
+          requiresProfile: true
+        },
+        {
+          role: "clean tone",
+          preferred: ["Gain", "Gain 2x2", "Vintage Cabinets", "MOD Cabinet"],
+          reason: "Clean core tone for the melody and harmony parts.",
+          requiresProfile: true
+        },
+        {
+          role: "delay",
+          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          reason: "Long delay support for the lead lines.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Large reverb tail for the spacious Pink Floyd sound.",
+          requiresProfile: true
+        }
+      ]);
     }
 
     roles.push({
@@ -348,7 +607,182 @@ export class PedalboardPlannerService {
     signalChain: PlannedPlugin[]
   ): PlannedSnapshot[] {
     const text = promptTextFor(input);
-    const isLetItHappenBoard = matches(text, ["tame impala", "let it happen"]);
+    if (matches(text, ["new year's day", "new years day"])) {
+      return [
+        {
+          name: "Intro",
+          description: "Clean intro with subtle chorus and space.",
+          parameterFocus: { modulation: "subtle", delay: "light repeats", reverb: "moderate hall" }
+        },
+        {
+          name: "Verse",
+          description: "Rhythmic verse with clear delay tails.",
+          parameterFocus: { modulation: "subtle width", delay: "more audible repeats", reverb: "controlled tail" }
+        },
+        {
+          name: "Lead",
+          description: "Forward lead with the same core clean texture.",
+          parameterFocus: { modulation: "slightly wider", delay: "lifted repeats", reverb: "more space" }
+        }
+      ];
+    }
+    if (matches(text, ["comfortably numb"])) {
+      return [
+        {
+          name: "Clean",
+          description: "Clean guitar foundation with compression and space.",
+          parameterFocus: { dynamics: "even level", delay: "supporting repeats", reverb: "moderate hall" }
+        },
+        {
+          name: "Solo",
+          description: "Singing lead with more sustain and echo.",
+          parameterFocus: { drive: "more present", delay: "clear lead echo", reverb: "bigger tail" }
+        },
+        {
+          name: "Big Solo",
+          description: "Largest lead voice with wide ambience.",
+          parameterFocus: { drive: "strongest lead sustain", delay: "broader repeats", reverb: "wide and long" }
+        }
+      ];
+    }
+    if (matches(text, ["master of puppets"])) {
+      return [
+        {
+          name: "Rhythm",
+          description: "Tight thrash rhythm tone.",
+          parameterFocus: { drive: "tight high gain", cabinet: "tight low-end" }
+        },
+        {
+          name: "Lead",
+          description: "Lead lift with the same aggressive core.",
+          parameterFocus: { drive: "slightly hotter", cabinet: "focused" }
+        }
+      ];
+    }
+    if (matches(text, ["sigur ros", "sigur rós"])) {
+      return [
+        {
+          name: "Atmosphere",
+          description: "Wide ambient wash.",
+          parameterFocus: { delay: "long repeats", reverb: "huge tail" }
+        },
+        {
+          name: "Swell",
+          description: "Building ambient texture.",
+          parameterFocus: { modulation: "slow movement", reverb: "larger wash" }
+        },
+        {
+          name: "Massive Wall",
+          description: "Largest ambient section.",
+          parameterFocus: { delay: "dense repeats", reverb: "maximum space" }
+        }
+      ];
+    }
+    if (matches(text, ["khruangbin"])) {
+      return [
+        {
+          name: "Clean",
+          description: "Clean and articulate.",
+          parameterFocus: { dynamics: "tight", modulation: "subtle" }
+        },
+        {
+          name: "Funk",
+          description: "Rhythmic clean funk accent.",
+          parameterFocus: { dynamics: "controlled", modulation: "more movement" }
+        },
+        {
+          name: "Psychedelic",
+          description: "Wider psychedelic texture.",
+          parameterFocus: { modulation: "more obvious", delay: "light support" }
+        }
+      ];
+    }
+    if (matches(text, ["tom morello"])) {
+      return [
+        {
+          name: "Rhythm",
+          description: "Primary riffing tone.",
+          parameterFocus: { drive: "present", output: "steady" }
+        },
+        {
+          name: "Solo",
+          description: "Lead or effect-heavy section.",
+          parameterFocus: { drive: "more aggressive", delay: "optional support" }
+        }
+      ];
+    }
+    if (matches(text, ["shoegaze"])) {
+      return [
+        {
+          name: "Clean Wash",
+          description: "Start with haze and width.",
+          parameterFocus: { delay: "moderate wash", reverb: "wide tail" }
+        },
+        {
+          name: "Wall Of Sound",
+          description: "Dense layered guitar cloud.",
+          parameterFocus: { drive: "stronger", delay: "deeper wash", reverb: "bigger tail" }
+        },
+        {
+          name: "Infinite Atmosphere",
+          description: "Largest and longest ambient section.",
+          parameterFocus: { delay: "maximum repeats", reverb: "maximum space" }
+        }
+      ];
+    }
+    if (matches(text, ["bass guitar", "modern rock bass"])) {
+      return [
+        {
+          name: "Base",
+          description: "Core bass tone with control.",
+          parameterFocus: { dynamics: "steady", cabinet: "present" }
+        },
+        {
+          name: "Drive",
+          description: "A bit more grit for heavy parts.",
+          parameterFocus: { drive: "slightly pushed", cabinet: "kept tight" }
+        }
+      ];
+    }
+    if (matches(text, ["self oscillating"])) {
+      return [
+        {
+          name: "Ambient",
+          description: "Initial ambient delay bloom.",
+          parameterFocus: { delay: "high feedback", reverb: "supportive" }
+        },
+        {
+          name: "Oscillation",
+          description: "Feedback-heavy section.",
+          parameterFocus: { delay: "near oscillation", reverb: "controlled" }
+        }
+      ];
+    }
+    if (matches(text, ["shine on you crazy diamond"])) {
+      return [
+        {
+          name: "Intro",
+          description: "Clean opening texture.",
+          parameterFocus: { dynamics: "even", delay: "supportive", reverb: "wide" }
+        },
+        {
+          name: "Verse",
+          description: "Main guitar phrase.",
+          parameterFocus: { delay: "present", reverb: "space" }
+        },
+        {
+          name: "Solo",
+          description: "Lead lift.",
+          parameterFocus: { drive: "slightly hotter", delay: "clear repeats", reverb: "bigger tail" }
+        },
+        {
+          name: "Outro",
+          description: "Closing ambient fade.",
+          parameterFocus: { delay: "long", reverb: "wide and long" }
+        }
+      ];
+    }
+    const isLetItHappenBoard = matches(text, ["let it happen"]);
     const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
     const hasDelay = signalChain.some((plugin) => plugin.role === "delay");
     const hasReverb = signalChain.some((plugin) => plugin.role === "reverb");

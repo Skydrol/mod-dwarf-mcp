@@ -79,7 +79,7 @@ describe("EffectRecipeToPedalboardPlanService", () => {
     expect(plan.notes.join("\n")).toContain("reuses snapshot 'Verse'");
   });
 
-  it("maps Elephant-style recipes to drive plus modulation without delay or reverb", async () => {
+  it("maps Elephant-style recipes to fuzz drive and cabinet without ambient effects", async () => {
     const pluginService = new PluginService(null, pluginCatalog);
     const converter = new EffectRecipeToPedalboardPlanService(
       pluginService,
@@ -94,27 +94,33 @@ describe("EffectRecipeToPedalboardPlanService", () => {
       instrument: "guitar",
       operationMode: "replace_current_board",
       effects: [
-        { role: "drive", character: "fuzzy, saturated, broken-up fuzz", intensity: "strong" },
-        { role: "modulation", character: "phase movement, swirling psychedelic phaser", intensity: "medium" }
+        { role: "fuzz", character: "dry, aggressive fuzz", intensity: "strong" },
+        { role: "drive", character: "tight amp-like push", intensity: "medium" },
+        { role: "cabinet", character: "dry cabinet character", intensity: "subtle" }
       ],
       snapshots: [
-        { name: "Verse", description: "Fuzz lower and phase subtle", effectFocus: { drive: "medium", modulation: "subtle" } },
-        { name: "Chorus", description: "Bigger swirl and more intensity", effectFocus: { drive: "strong", modulation: "medium" } }
+        { name: "Main Riff", description: "Dry, aggressive core riff", effectFocus: { fuzz: "strong", drive: "medium" } },
+        { name: "Lead", description: "Slightly lifted lead voice", effectFocus: { fuzz: "strong", drive: "medium", cabinet: "tight" } }
       ],
       sections: [
-        { name: "Verse", snapshot: "Verse" },
-        { name: "Chorus", snapshot: "Chorus" },
-        { name: "Chorus 2", snapshot: "Chorus" }
+        { name: "Rhythm", snapshot: "Main Riff" },
+        { name: "Lead", snapshot: "Lead" },
+        { name: "Lead 2", snapshot: "Lead" }
       ]
     });
 
-    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(["drive", "modulation"]);
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual([
+      "fuzz",
+      "high gain drive",
+      "cabinet"
+    ]);
     expect(plan.signalChain.map((plugin) => plugin.name)).toEqual([
       "AIDA-X",
-      "TAP Chorus/Flanger"
+      "AIDA-X",
+      "Vintage Cabinets"
     ]);
-    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Verse", "Chorus"]);
-    expect(plan.notes.join("\n")).toContain("Section 'Chorus 2' reuses snapshot 'Chorus'.");
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Main Riff", "Lead"]);
+    expect(plan.notes.join("\n")).toContain("Section 'Lead 2' reuses snapshot 'Lead'.");
   });
 });
 

@@ -65,6 +65,123 @@ describe("PedalboardPlannerService", () => {
     ]);
   });
 
+  it("treats Elephant as fuzz plus drive plus cabinet", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "psych rock",
+      instrument: "guitar",
+      goals: ["I want Tame Impala Elephant with a dry aggressive riff"],
+      referenceArtists: ["Tame Impala"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["fuzz", "high gain drive", "cabinet"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toEqual(
+      expect.arrayContaining(["delay", "reverb", "modulation"])
+    );
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual([
+      "Base",
+      "Drive",
+      "Lead"
+    ]);
+  });
+
+  it("handles U2 New Year's Day with clean chorus delay and reverb roles", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "anthemic rock",
+      instrument: "guitar",
+      goals: ["I want the guitar sound from U2 - New Year's Day"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["clean tone shaper", "modulation", "delay", "reverb"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toEqual(
+      expect.arrayContaining(["high gain drive", "metal amp"])
+    );
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Intro", "Verse", "Lead"]);
+  });
+
+  it("handles Comfortably Numb with compression, drive, delay and reverb", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "lead rock",
+      instrument: "guitar",
+      goals: ["I want David Gilmour's guitar tone from Comfortably Numb"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["dynamics", "high gain drive", "delay", "reverb"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toContain("high gain metal");
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Clean", "Solo", "Big Solo"]);
+  });
+
+  it("handles Master of Puppets as high gain drive plus cabinet", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "metal",
+      instrument: "guitar",
+      goals: ["I want the rhythm guitar tone from Master of Puppets"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["high gain drive", "cabinet"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toEqual(
+      expect.arrayContaining(["chorus", "large reverb"])
+    );
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Rhythm", "Lead"]);
+  });
+
+  it("handles Sigur Ros ambient as delay, reverb and modulation", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "ambient",
+      instrument: "guitar",
+      goals: ["Create a Sigur Ros style ambient guitar pedalboard"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["delay", "reverb", "modulation"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toContain("high gain drive");
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual([
+      "Atmosphere",
+      "Swell",
+      "Massive Wall"
+    ]);
+  });
+
+  it("handles Khruangbin as clean, compressed and modulated", async () => {
+    const pluginService = new PluginService(null, pluginCatalog);
+    const planner = new PedalboardPlannerService(pluginService);
+
+    const plan = await planner.planFromPrompt({
+      style: "clean psychedelic",
+      instrument: "guitar",
+      goals: ["Create a Khruangbin style clean psychedelic guitar pedalboard"]
+    });
+
+    expect(plan.signalChain.map((plugin) => plugin.role)).toEqual(
+      expect.arrayContaining(["dynamics", "clean tone shaper", "modulation"])
+    );
+    expect(plan.signalChain.map((plugin) => plugin.role)).not.toContain("high gain drive");
+    expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Clean", "Funk", "Psychedelic"]);
+  });
+
   it("decides a new board mode for explicit creation requests", async () => {
     const pluginService = new PluginService(null, pluginCatalog);
     const planner = new PedalboardPlannerService(pluginService);
