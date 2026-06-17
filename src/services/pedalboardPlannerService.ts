@@ -125,45 +125,24 @@ export class PedalboardPlannerService {
 
   private decideOperationMode(promptText: string): PedalboardOperationMode {
     const text = promptText.toLowerCase();
+    const adjustment = classifyAdjustmentIntent(text);
+
+    if (adjustment === "parameter_only") {
+      return "parameter_only";
+    }
+
+    if (adjustment === "modify_current_board") {
+      return "modify_current_board";
+    }
 
     if (
       matches(text, [
         "parameter only",
         "just change parameters",
         "change parameters only",
-        "diminuir",
-        "reduzir",
-        "menos saturacao",
-        "saturacao",
-        "saturation",
-        "lower saturation",
-        "less saturation",
-        "reduce saturation",
-        "reduce the saturation",
-        "too saturated",
-        "less distorted",
-        "dial back saturation",
-        "turn down saturation"
-      ])
-    ) {
-      return "parameter_only";
-    }
-
-    if (
-      matches(text, [
-        "trocar",
-        "substituir",
-        "replace",
-        "swap",
-        "change the pedal",
-        "change effect",
-        "remove this effect",
-        "remove the effect",
-        "another effect",
-        "different effect",
-        "less saturated effect",
-        "lighter drive",
-        "less aggressive drive"
+        "modify current board",
+        "keep current board",
+        "adjust current board"
       ])
     ) {
       return "modify_current_board";
@@ -224,7 +203,10 @@ export class PedalboardPlannerService {
       "dial back saturation",
       "turn down saturation"
     ]);
-    const requiresEffectSubstitution = matches(text, [
+    const adjustment = classifyAdjustmentIntent(text);
+    const toneComplaint = classifyToneComplaint(text);
+    const requiresEffectSubstitution = adjustment === "modify_current_board";
+    const explicitSubstitution = matches(text, [
       "trocar",
       "substituir",
       "replace",
@@ -237,7 +219,9 @@ export class PedalboardPlannerService {
       "different effect",
       "less saturated effect",
       "lighter drive",
-      "less aggressive drive"
+      "less aggressive drive",
+      "swap the effect",
+      "replace the effect"
     ]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
@@ -287,6 +271,110 @@ export class PedalboardPlannerService {
           role: "output level",
           preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
           reason: "Bring the overall level back to a controlled output after reducing drive.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (adjustment === "modify_current_board" && (toneComplaint !== null || explicitSubstitution)) {
+      if (toneComplaint === "harsh") {
+        return dedupeRoles([
+          {
+            role: "output level",
+            preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
+            reason: "Swap or soften the final stage to reduce harshness.",
+            requiresProfile: true
+          },
+          cabinetRole()
+        ]);
+      }
+
+      if (toneComplaint === "muddy") {
+        return dedupeRoles([
+          {
+            role: "input gain",
+            preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
+            reason: "Swap to a tighter front-end stage to clean up the low end.",
+            requiresProfile: true
+          },
+          cabinetRole()
+        ]);
+      }
+
+      if (toneComplaint === "echoing") {
+        return dedupeRoles([
+          {
+            role: "delay",
+            preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
+            reason: "Replace the current echo source with a more controlled delay choice.",
+            requiresProfile: true
+          },
+          {
+            role: "reverb",
+            preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+            reason: "Tame excessive ambience by choosing a better-matched reverb.",
+            requiresProfile: true
+          }
+        ]);
+      }
+
+      return dedupeRoles([
+        {
+          role: "high gain drive",
+          preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur", "Big Muff"],
+          reason: "Replace the current effect with a different installed drive that better fits the adjustment request.",
+          requiresProfile: true
+        },
+        cabinetRole()
+      ]);
+    }
+
+    if (toneComplaint === "harsh") {
+      return dedupeRoles([
+        {
+          role: "output level",
+          preferred: ["Gain 2x2", "Gain", "Volume", "TinyGain Stereo"],
+          reason: "Reduce the top-end bite and overall level before the output stage.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "If present, soften harshness with a controlled space tail.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (toneComplaint === "muddy") {
+      return dedupeRoles([
+        {
+          role: "input gain",
+          preferred: ["Gain", "Gain 2x2", "TinyGain Mono", "Volume"],
+          reason: "Tighten the front of the chain and reduce excessive low-end buildup.",
+          requiresProfile: true
+        },
+        {
+          role: "cabinet",
+          preferred: ["Vintage Cabinets", "MOD Cabinet", "GxCabinet", "Cabinet Loader"],
+          reason: "Keep the body controlled while restoring definition.",
+          requiresProfile: true
+        }
+      ]);
+    }
+
+    if (toneComplaint === "echoing") {
+      return dedupeRoles([
+        {
+          role: "delay",
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Modulay", "Ping Pong Pan"],
+          reason: "Reduce or reshape repeat-heavy echo behavior.",
+          requiresProfile: true
+        },
+        {
+          role: "reverb",
+          preferred: ["Dragonfly Hall Reverb", "MVerb", "TAL-Reverb-II", "Shiroverb"],
+          reason: "Control the ambient tail so the sound does not wash out.",
           requiresProfile: true
         }
       ]);
@@ -1032,6 +1120,114 @@ function promptTextFor(input: PedalboardPlanInput): string {
 
 function matches(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
+}
+
+function classifyAdjustmentIntent(text: string): "parameter_only" | "modify_current_board" | null {
+  const explicitParameterOnly = matches(text, [
+    "parameter only",
+    "just change parameters",
+    "change parameters only"
+  ]);
+  const substitutionCue = matches(text, [
+    "trocar",
+    "substituir",
+    "replace",
+    "swap",
+    "change the pedal",
+    "change effect",
+    "remove this effect",
+    "remove the effect",
+    "another effect",
+    "different effect",
+    "less saturated effect",
+    "lighter drive",
+    "less aggressive drive",
+    "swap the effect",
+    "replace the effect"
+  ]);
+  const complaintCue = classifyToneComplaint(text) !== null || matches(text, [
+    "diminuir",
+    "reduzir",
+    "menos saturacao",
+    "saturacao",
+    "saturation",
+    "lower saturation",
+    "less saturation",
+    "reduce saturation",
+    "reduce the saturation",
+    "too saturated",
+    "less distorted",
+    "dial back saturation",
+    "turn down saturation",
+    "increase brightness",
+    "reduce brightness",
+    "less bright",
+    "more bright",
+    "too bright",
+    "less harsh",
+    "too harsh",
+    "more defined",
+    "less muddy",
+    "too muddy",
+    "less echo",
+    "too much echo",
+    "less reverb",
+    "too much reverb",
+    "less delay",
+    "too much delay"
+  ]);
+  if (substitutionCue) return "modify_current_board";
+  if (explicitParameterOnly || complaintCue) return "parameter_only";
+  return null;
+}
+
+function classifyToneComplaint(text: string): "harsh" | "muddy" | "echoing" | null {
+  if (
+    matches(text, [
+      "harsh",
+      "harshness",
+      "strident",
+      "stridency",
+      "bright",
+      "brightness",
+      "estridente",
+      "agudo",
+      "ardido",
+      "agudo demais"
+    ])
+  ) {
+    return "harsh";
+  }
+  if (
+    matches(text, [
+      "muddy",
+      "mud",
+      "dirty",
+      "blurred",
+      "boomy",
+      "sujo",
+      "embolado",
+      "abafado",
+      "fechado"
+    ])
+  ) {
+    return "muddy";
+  }
+  if (
+    matches(text, [
+      "echoing",
+      "too much echo",
+      "too much reverb",
+      "ecoando",
+      "ecoando demais",
+      "reverberando demais",
+      "muito eco",
+      "eco demais"
+    ])
+  ) {
+    return "echoing";
+  }
+  return null;
 }
 
 function normalize(value: string): string {
