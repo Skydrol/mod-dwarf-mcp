@@ -1,11 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import type { ClearCurrentPedalboardService } from "./clearCurrentPedalboardService.js";
 import type { DryBundleService } from "./dryBundleService.js";
-import type { ImportBundleService } from "./importBundleService.js";
+import type { LiveGraphAuthoringPlanService } from "./liveGraphAuthoringPlan.js";
 import type { PedalboardService } from "./pedalboardService.js";
 import type { SaveLoadedPedalboardService } from "./saveLoadedPedalboardService.js";
 import type { PedalboardPlan } from "../types/plan.js";
+import type { LiveGraphApiCall } from "../types/liveGraphAuthoringPlan.js";
+import { uiGraphInstancePath, uiGraphRef } from "./liveGraphRefs.js";
 
 export interface ExecutePedalboardPlanResult {
   confirmed: boolean;
@@ -29,9 +32,10 @@ export interface ExecutePedalboardPlanResult {
 export class ExecutePedalboardPlanService {
   constructor(
     private readonly dryBundleService: DryBundleService,
-    private readonly importBundleService: ImportBundleService,
+    private readonly liveGraphAuthoringPlanService: LiveGraphAuthoringPlanService,
     private readonly pedalboardService: PedalboardService,
     private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService,
+    private readonly clearCurrentPedalboardService: ClearCurrentPedalboardService,
     private readonly writeApi: WriteHttpClient | null
   ) {}
 
@@ -47,15 +51,17 @@ export class ExecutePedalboardPlanService {
 
     const dryBundle = await this.dryBundleService.createDryBundle(input.plan);
     if (input.plan.operationMode === "new_board" || input.plan.operationMode === "replace_current_board") {
-      await this.resetBoard();
+      // /reset ensures a fully clean in-memory graph. Per-plugin removes via
+      // clearCurrentPedalboardService are unreliable because /pedalboard/info/
+      // (without bundlepath) returns 400 on some firmware versions, causing the
+      // service to skip all removals silently.
+      if (this.writeApi) {
+        await this.writeApi.getBytes("/reset", "reset board to ensure clean graph before live apply");
+      }
     }
-    const importResult = await this.importBundleService.importDryBundle({
-      dryBundle,
-      confirm: true,
-      targetName: title
-    });
 
-    if (!importResult.import.success) {
+    const authoringPlan = await this.liveGraphAuthoringPlanService.buildPlan(input.plan);
+    if (!authoringPlan.validation.valid) {
       return {
         confirmed: true,
         operationMode: input.plan.operationMode,
@@ -63,21 +69,54 @@ export class ExecutePedalboardPlanService {
         imported: false,
         saved: false,
         loaded: false,
-        reportPath: await this.writeReport(title, input.plan, false, false, false, importResult.notes),
-        apiCalls: importResult.apiCalls,
-        notes: [...importResult.notes, "Import failed before save/load."]
+        reportPath: await this.writeReport(
+          title,
+          input.plan,
+          false,
+          false,
+          false,
+          authoringPlan.notes
+        ),
+        apiCalls: [],
+        notes: [...authoringPlan.notes, "Live graph plan validation failed before apply."]
+      };
+    }
+
+    const liveApplyResult = await this.applyLiveGraphPlan(authoringPlan.apiCalls);
+    if (!liveApplyResult.success) {
+      return {
+        confirmed: true,
+        operationMode: input.plan.operationMode,
+        title,
+        imported: false,
+        saved: false,
+        loaded: false,
+        reportPath: await this.writeReport(
+          title,
+          input.plan,
+          false,
+          false,
+          false,
+          liveApplyResult.notes
+        ),
+        apiCalls: liveApplyResult.apiCalls,
+        notes: [...liveApplyResult.notes, "Live graph apply failed before save/load."]
       };
     }
 
     const expectedPluginUris = input.plan.signalChain
       .map((plugin) => plugin.uri)
       .filter((uri): uri is string => Boolean(uri));
+
+    const expectedInstances = authoringPlan.plugins.map((plugin) => plugin.instance);
+    const strayCleanup = await this.cleanupStrayPlugins(expectedInstances);
+
     const saveAttempt = await this.saveLoadedPedalboardService.saveAsNew({
       title,
       confirm: true,
       expectedPluginUris,
-      loadedBundlePath: `/tmp/pedalboards/${basename(dryBundle.bundlePath)}`,
-      inspectSavedBundle: false
+      skipLoadedGraphValidation: true,
+      inspectSavedBundle: true
     });
 
     let saveResult = saveAttempt;
@@ -88,19 +127,29 @@ export class ExecutePedalboardPlanService {
         title: savedTitle,
         confirm: true,
         expectedPluginUris,
-        loadedBundlePath: `/tmp/pedalboards/${basename(dryBundle.bundlePath)}`,
-        inspectSavedBundle: false
+        skipLoadedGraphValidation: true,
+        inspectSavedBundle: true
       });
     }
 
-    const saved = Boolean(saveResult.saved.success);
+    const savedBundleMatches =
+      Boolean(saveResult.saved.success) &&
+      Boolean(saveResult.savedBundleInspection) &&
+      compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection?.pluginsUsed ?? []);
+    const saved = Boolean(saveResult.saved.success) && savedBundleMatches;
     const loaded = saved;
 
     const notes = [
-      ...importResult.notes,
+      ...authoringPlan.notes,
+      ...liveApplyResult.notes,
+      ...strayCleanup.notes,
       ...saveResult.notes,
-      saved ? `Saved as a new pedalboard as '${savedTitle}'.` : "Save failed after import.",
-      loaded ? "Imported bundle remains active after save." : "Active graph did not remain loaded."
+      ...(saveResult.savedBundleInspection &&
+      !compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection.pluginsUsed)
+        ? ["Saved bundle plugin list did not exactly match the planned chain."]
+        : []),
+      saved ? `Saved as a new pedalboard as '${savedTitle}'.` : "Save failed after applying the live graph.",
+      loaded ? "Live graph remains active after save." : "Active graph did not remain loaded."
     ];
     const reportPath = await this.writeReport(title, input.plan, true, saved, loaded, notes);
 
@@ -112,7 +161,7 @@ export class ExecutePedalboardPlanService {
       saved,
       loaded,
       reportPath,
-      apiCalls: [...importResult.apiCalls, ...saveResult.apiCalls],
+      apiCalls: [...liveApplyResult.apiCalls, ...saveResult.apiCalls],
       notes
     };
   }
@@ -139,15 +188,6 @@ export class ExecutePedalboardPlanService {
     return `${plan.request.instrument} ${plan.request.style}`.trim() || "MOD Dwarf Pedalboard";
   }
 
-  private async resetBoard(): Promise<void> {
-    if (!this.writeApi) return;
-    try {
-      await this.writeApi.getBytes("/reset", "reset board before prompt execution");
-    } catch {
-      // Best effort; import will still run and report its own status.
-    }
-  }
-
   private async nextAvailableTitle(baseTitle: string): Promise<string> {
     const pedalboards = await this.pedalboardService.listPedalboards("user");
     for (let index = 2; index < 10; index += 1) {
@@ -162,6 +202,143 @@ export class ExecutePedalboardPlanService {
       }
     }
     return `${baseTitle} (${Date.now()})`;
+  }
+
+  private async cleanupStrayPlugins(
+    expectedInstances: string[]
+  ): Promise<{ removed: string[]; failed: string[]; notes: string[] }> {
+    if (!this.writeApi) return { removed: [], failed: [], notes: [] };
+
+    try {
+      const response = await this.writeApi.getJson<{
+        plugins?: Array<{ instance?: string; uri?: string }>;
+      }>("/pedalboard/info/", "inspect active graph for stray plugins after live apply");
+
+      if (!response.ok || !response.value) {
+        return { removed: [], failed: [], notes: [] };
+      }
+
+      const expectedSet = new Set(expectedInstances.map(normalizeGraphInstance));
+      const strayInstances: string[] = [];
+
+      for (const plugin of response.value.plugins ?? []) {
+        const normalized = normalizeGraphInstance(plugin.instance ?? "");
+        if (normalized && !expectedSet.has(normalized)) {
+          strayInstances.push(normalized);
+        }
+      }
+
+      if (strayInstances.length === 0) {
+        return { removed: [], failed: [], notes: [] };
+      }
+
+      const removed: string[] = [];
+      const failed: string[] = [];
+
+      for (const instance of strayInstances) {
+        const path = `/effect/remove/${uiGraphInstancePath(instance)}`;
+        const removeResponse = await this.writeApiOrThrow().getBytes(
+          path,
+          `remove stray plugin ${instance} left from a previous pedalboard`
+        );
+        if (removeResponse.ok) {
+          removed.push(instance);
+        } else {
+          failed.push(instance);
+        }
+      }
+
+      const notes: string[] = [];
+      if (removed.length > 0) {
+        notes.push(
+          `Removed ${removed.length} stray plugin instance(s) left from a previous board: ${removed.join(", ")}.`
+        );
+      }
+      if (failed.length > 0) {
+        notes.push(
+          `Failed to remove ${failed.length} stray plugin instance(s): ${failed.join(", ")}.`
+        );
+      }
+      return { removed, failed, notes };
+    } catch {
+      return { removed: [], failed: [], notes: [] };
+    }
+  }
+
+  private async applyLiveGraphPlan(apiCalls: LiveGraphApiCall[]): Promise<{
+    success: boolean;
+    apiCalls: Array<{
+      method: "GET" | "POST";
+      path: string;
+      purpose: string;
+      status: "success" | "failed" | "skipped";
+      httpStatus?: number;
+      error?: string;
+    }>;
+    notes: string[];
+  }> {
+    if (!this.writeApi) {
+      return {
+        success: false,
+        apiCalls: [],
+        notes: ["Write API is not configured."]
+      };
+    }
+
+    const executed: Array<{
+      method: "GET" | "POST";
+      path: string;
+      purpose: string;
+      status: "success" | "failed" | "skipped";
+      httpStatus?: number;
+      error?: string;
+    }> = [];
+
+    for (const call of apiCalls) {
+      if (call.path === "/pedalboard/save" || call.path === "/snapshot/save") continue;
+      const response = await this.executeLiveCall(call);
+      executed.push({
+        method: call.method,
+        path: call.path,
+        purpose: call.purpose,
+        status: response.ok ? "success" : "failed",
+        httpStatus: response.status,
+        error: response.ok ? undefined : response.text.slice(0, 500)
+      });
+      if (!response.ok) {
+        return {
+          success: false,
+          apiCalls: executed,
+          notes: [`Live graph call failed: ${call.path} -> HTTP ${response.status}`]
+        };
+      }
+    }
+
+    return {
+      success: true,
+      apiCalls: executed,
+      notes: ["Applied the live graph directly through MOD UI API endpoints."]
+    };
+  }
+
+  private async executeLiveCall(call: LiveGraphApiCall) {
+    const body = call.body ?? { kind: "none" as const };
+    const path = normalizeLiveCallPath(call.path);
+    if (call.method === "GET" || body.kind === "none") {
+      return this.writeApiOrThrow().getBytes(path, call.purpose);
+    }
+    if (body.kind === "form") {
+      return this.writeApiOrThrow().postForm(path, body.fields, call.purpose);
+    }
+    if (body.kind === "json") {
+      return this.writeApiOrThrow().postJson(path, body.value, call.purpose);
+    }
+    return this.writeApiOrThrow().getBytes(path, call.purpose);
+  }
+
+  private writeApiOrThrow(): WriteHttpClient {
+    if (!this.writeApi) throw new Error("Write API is not configured");
+    return this.writeApi;
   }
 
   private async writeReport(
@@ -197,6 +374,13 @@ export class ExecutePedalboardPlanService {
   }
 }
 
+function normalizeGraphInstance(value: string): string {
+  return value
+    .trim()
+    .replace(/^(?:\/graph\/|graph\/)/, "")
+    .replace(/^\//, "");
+}
+
 function timestamp(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -212,4 +396,22 @@ function timestamp(): string {
 
 function normalizeTitle(value: string): string {
   return value.replace(/\.pedalboard$/, "").replace(/_/g, " ").trim().toLowerCase();
+}
+
+function compareBundlePlugins(expectedPluginUris: string[], actualPlugins: Array<{ uri: string }>): boolean {
+  const actualPluginUris = actualPlugins.map((plugin) => plugin.uri).filter(Boolean);
+  if (actualPluginUris.length !== expectedPluginUris.length) return false;
+  const expected = [...expectedPluginUris].sort();
+  const actual = [...actualPluginUris].sort();
+  return expected.every((uri, index) => uri === actual[index]);
+}
+
+function normalizeLiveCallPath(path: string): string {
+  const prefix = "/effect/connect/";
+  if (!path.startsWith(prefix)) return path;
+  const payload = path.slice(prefix.length);
+  if (payload.includes("/graph/")) return path;
+  const [source, target] = payload.split(",", 2);
+  if (!source || !target) return path;
+  return `/effect/connect/${uiGraphRef(source)},${uiGraphRef(target)}`;
 }
