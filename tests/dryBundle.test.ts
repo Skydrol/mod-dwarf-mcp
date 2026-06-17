@@ -10,8 +10,7 @@ import { MockRunner } from "./mockRunner.js";
 
 describe("DryBundleService", () => {
   it("generates a complete local dry-run pedalboard bundle", async () => {
-    const runner = new MockRunner();
-    const pluginService = new PluginService(runner);
+    const pluginService = new PluginService(null, pluginCatalog);
     const planner = new PedalboardPlannerService(pluginService);
     const service = new DryBundleService(pluginService);
     const plan = await planner.planFromPrompt({
@@ -32,6 +31,7 @@ describe("DryBundleService", () => {
       calledModApi: false,
       modifiedPedalboards: false
     });
+    expect(bundle.sourcePlan.signalChain.length).toBeGreaterThan(0);
 
     await Promise.all(Object.values(bundle.generatedFiles).map((file) => access(file)));
 
@@ -46,10 +46,10 @@ describe("DryBundleService", () => {
 
     expect(manifest).toContain("pedal:Pedalboard");
     expect(mainTtl).toContain("a ingen:Block");
-    expect(mainTtl).toContain("/in1>");
-    expect(mainTtl).toContain("/out1>");
-    expect(mainTtl).not.toContain("MVerb_3/In");
-    expect(mainTtl).not.toContain("MVerb_3/Out");
+    expect(mainTtl).toContain("ingen:canvasX 120.0 ;");
+    expect(mainTtl).toContain("ingen:canvasX 880.0 ;");
+    expect(mainTtl).toContain("ingen:canvasX 1640.0 ;");
+    expect(mainTtl).toContain("ingen:canvasY 760.0 ;");
     expect(snapshots.snapshots.length).toBe(plan.snapshots.length);
     expect(Object.keys(addressings)[0]).toBe("/hmi/knob1");
   });

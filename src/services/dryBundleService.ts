@@ -12,6 +12,7 @@ import {
   extractPluginsUsed
 } from "./parsers.js";
 import { PedalboardSafetyService } from "./pedalboardSafetyService.js";
+import { GraphLayoutService } from "./graphLayoutService.js";
 import type { PluginService } from "./pluginService.js";
 
 interface ResolvedPlugin {
@@ -59,7 +60,8 @@ const snapshotsFileSchema = z
 export class DryBundleService {
   constructor(
     private readonly pluginService: PluginService,
-    private readonly safetyService: PedalboardSafetyService = new PedalboardSafetyService()
+    private readonly safetyService: PedalboardSafetyService = new PedalboardSafetyService(),
+    private readonly graphLayoutService: GraphLayoutService = new GraphLayoutService()
   ) {}
 
   async createDryBundle(plan: PedalboardPlan): Promise<DryPedalboardBundle> {
@@ -75,9 +77,10 @@ export class DryBundleService {
     const root = await mkdtemp(join(tmpdir(), "mod-dwarf-mcp-"));
     const bundlePath = join(root, `${slug(title)}.pedalboard`);
     await mkdir(bundlePath, { recursive: true });
+    const layout = this.graphLayoutService.layoutPlugins(resolvedPlugins.map((plugin) => plugin.plan));
 
     const manifest = this.renderManifest(mainFileName);
-    const mainTtl = this.renderMainTtl(title, resolvedPlugins);
+    const mainTtl = this.renderMainTtl(title, resolvedPlugins, layout);
     const snapshots = this.renderSnapshots(resolvedPlugins, safePlan.snapshots);
     const addressings = this.renderAddressings(resolvedPlugins);
 
@@ -147,7 +150,11 @@ export class DryBundleService {
     ].join("\n");
   }
 
-  private renderMainTtl(title: string, signalChain: ResolvedPlugin[]): string {
+  private renderMainTtl(
+    title: string,
+    signalChain: ResolvedPlugin[],
+    layout: Array<{ x: number; y: number }>
+  ): string {
     const prefixes = [
       "@prefix atom:  <http://lv2plug.in/ns/ext/atom#> .",
       "@prefix doap:  <http://usefulinc.com/ns/doap#> .",
@@ -162,7 +169,7 @@ export class DryBundleService {
 
     const { ttl: connectionsTtl, arcs } = this.renderConnectionsData(signalChain);
     const blocksTtl = signalChain
-      .map((plugin, index) => this.renderPluginBlock(plugin, index))
+      .map((plugin, index) => this.renderPluginBlock(plugin, index, layout[index]))
       .join("\n");
 
     const blockRefs =
@@ -320,7 +327,11 @@ export class DryBundleService {
     return `${connections.join("\n\n")}\n\n`;
   }
 
-  private renderPluginBlock(plugin: ResolvedPlugin, index: number): string {
+  private renderPluginBlock(
+    plugin: ResolvedPlugin,
+    index: number,
+    layout: { x: number; y: number }
+  ): string {
     const instance = safeInstance(plugin.plan);
     const audioPorts = [...plugin.ports.audioInputs, ...plugin.ports.audioOutputs];
     const portList = [
@@ -344,8 +355,8 @@ export class DryBundleService {
 
     return [
       `<${instance}>`,
-      `    ingen:canvasX ${100 + index * 220}.0 ;`,
-      `    ingen:canvasY ${index % 2 === 0 ? "180.0" : "300.0"} ;`,
+      `    ingen:canvasX ${layout.x.toFixed(1)} ;`,
+      `    ingen:canvasY ${layout.y.toFixed(1)} ;`,
       "    ingen:enabled true ;",
       `    lv2:port ${portList.join(" , ")} ;`,
       `    lv2:prototype <${plugin.plan.uri ?? ""}> ;`,
