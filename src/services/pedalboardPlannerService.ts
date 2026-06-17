@@ -189,10 +189,6 @@ export class PedalboardPlannerService {
     const isLetItHappenBoard = matches(text, ["let it happen"]);
     const isSmellsLikeTeenSpirit = matches(text, ["smells like teen spirit", "nirvana"]);
     const isSaturationReduction = matches(text, [
-      "diminuir",
-      "reduzir",
-      "menos saturacao",
-      "saturacao",
       "saturation",
       "lower saturation",
       "less saturation",
@@ -207,8 +203,6 @@ export class PedalboardPlannerService {
     const toneComplaint = classifyToneComplaint(text);
     const requiresEffectSubstitution = adjustment === "modify_current_board";
     const explicitSubstitution = matches(text, [
-      "trocar",
-      "substituir",
       "replace",
       "swap",
       "change the pedal",
@@ -969,10 +963,6 @@ export class PedalboardPlannerService {
     }
     if (
       matches(text, [
-        "diminuir",
-        "reduzir",
-        "menos saturacao",
-        "saturacao",
         "saturation",
         "lower saturation",
         "less saturation",
@@ -1129,8 +1119,6 @@ function classifyAdjustmentIntent(text: string): "parameter_only" | "modify_curr
     "change parameters only"
   ]);
   const substitutionCue = matches(text, [
-    "trocar",
-    "substituir",
     "replace",
     "swap",
     "change the pedal",
@@ -1146,11 +1134,6 @@ function classifyAdjustmentIntent(text: string): "parameter_only" | "modify_curr
     "replace the effect"
   ]);
   const complaintCue = classifyToneComplaint(text) !== null || matches(text, [
-    "diminuir",
-    "reduzir",
-    "menos saturacao",
-    "saturacao",
-    "saturation",
     "lower saturation",
     "less saturation",
     "reduce saturation",
@@ -1190,10 +1173,9 @@ function classifyToneComplaint(text: string): "harsh" | "muddy" | "echoing" | nu
       "stridency",
       "bright",
       "brightness",
-      "estridente",
-      "agudo",
-      "ardido",
-      "agudo demais"
+      "piercing",
+      "shrill",
+      "sharp"
     ])
   ) {
     return "harsh";
@@ -1205,10 +1187,9 @@ function classifyToneComplaint(text: string): "harsh" | "muddy" | "echoing" | nu
       "dirty",
       "blurred",
       "boomy",
-      "sujo",
-      "embolado",
-      "abafado",
-      "fechado"
+      "muddy",
+      "cloudy",
+      "closed"
     ])
   ) {
     return "muddy";
@@ -1218,11 +1199,9 @@ function classifyToneComplaint(text: string): "harsh" | "muddy" | "echoing" | nu
       "echoing",
       "too much echo",
       "too much reverb",
-      "ecoando",
-      "ecoando demais",
-      "reverberando demais",
-      "muito eco",
-      "eco demais"
+      "reverberant",
+      "washed out",
+      "too wet"
     ])
   ) {
     return "echoing";

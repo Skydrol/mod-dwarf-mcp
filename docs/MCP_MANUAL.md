@@ -19,10 +19,11 @@ When you connect to a MOD Dwarf for the first time in a session:
 When a user asks for a pedalboard or tone:
 
 1. Call `list_plugins` if you have not already done so in this session.
-2. Generate your own suggested effect list first.
-3. If the request depends on external musical knowledge, you may research it separately before asking MCP to build anything.
-4. Decide the snapshots you want before calling the builder.
-5. Only after you have a concrete list of effects and snapshots should you call `create_pedalboard_from_prompt` or `execute_pedalboard_plan`.
+2. Translate the user request to English before you interpret it or call the MCP.
+3. Generate your own suggested effect list first.
+4. If the request depends on external musical knowledge, you may research it separately before asking MCP to build anything.
+5. Decide the snapshots you want before calling the builder.
+6. Only after you have a concrete list of effects and snapshots should you call `create_pedalboard_from_prompt` or `execute_pedalboard_plan`.
 
 ### Recipe-Driven Use
 
@@ -44,6 +45,7 @@ If the caller already has a structured recipe:
 - Prefer installed plugins over theoretical or unavailable ones.
 - If the exact reference pedal is missing, choose the closest installed substitute and say so.
 - Do not ask the MCP to guess the musical intent for you. Provide the target effects and snapshots explicitly.
+- Translate the user request to English before using the MCP if the original prompt is in another language.
 - Use `create_new_pedalboard` only for a truly empty board.
 - Do not skip the plugin discovery step on the first use of a device.
 - Keep a local mental model of the inventory and reuse it instead of rediscovering everything every time.

@@ -20,8 +20,9 @@ On first use with a connected MOD Dwarf:
 For a user prompt like "Smells Like Teen Spirit":
 
 1. Discover installed plugins first.
-2. Decide the effect list and snapshots explicitly.
-3. Use `create_pedalboard_from_prompt` to build and save the board.
+2. Translate the request to English before interpreting it if the user wrote in another language.
+3. Decide the effect list and snapshots explicitly.
+4. Use `create_pedalboard_from_prompt` to build and save the board.
 
 ### Recipe-Driven Creation
 
@@ -94,6 +95,8 @@ npm start
 ## Safety Model
 
 Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds write-gated import/load and save tools that are disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. They use MOD UI API endpoints only, return every API call attempted, and never fall back to direct file writes. `create_pedalboard_from_prompt` and `execute_pedalboard_plan` drive the full HTTP creation flow; `create_new_pedalboard` is the fast empty-board helper, `save_loaded_pedalboard_as_new` refuses to run if the target title already exists and never calls `/banks/save`, and `load_existing_pedalboard` requires an existing bundle path, calls only `/pedalboard/load_bundle/`, and never calls `/pedalboard/save` or `/banks/save`.
+
+If the user's prompt is in a language other than English, translate it to English before deciding the MCP inputs.
 
 The SSH client allows only read-oriented commands such as `cat`, `find`, `ls`, `sed -n`, `uname`, `lv2ls`, `test`, `readlink`, `printf`, `grep`, and `wc`.
 
