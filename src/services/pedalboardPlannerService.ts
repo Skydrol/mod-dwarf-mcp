@@ -149,6 +149,26 @@ export class PedalboardPlannerService {
       return "parameter_only";
     }
 
+    if (
+      matches(text, [
+        "trocar",
+        "substituir",
+        "replace",
+        "swap",
+        "change the pedal",
+        "change effect",
+        "remove this effect",
+        "remove the effect",
+        "another effect",
+        "different effect",
+        "less saturated effect",
+        "lighter drive",
+        "less aggressive drive"
+      ])
+    ) {
+      return "modify_current_board";
+    }
+
     if (matches(text, ["modify current board", "keep current board", "adjust current board"])) {
       return "modify_current_board";
     }
@@ -204,6 +224,21 @@ export class PedalboardPlannerService {
       "dial back saturation",
       "turn down saturation"
     ]);
+    const requiresEffectSubstitution = matches(text, [
+      "trocar",
+      "substituir",
+      "replace",
+      "swap",
+      "change the pedal",
+      "change effect",
+      "remove this effect",
+      "remove the effect",
+      "another effect",
+      "different effect",
+      "less saturated effect",
+      "lighter drive",
+      "less aggressive drive"
+    ]);
     const wantsSelfOscillation = matches(text, [
       "maximum feedback",
       "infinite",
@@ -230,6 +265,17 @@ export class PedalboardPlannerService {
     }
 
     if (isSaturationReduction) {
+      if (requiresEffectSubstitution) {
+        return dedupeRoles([
+          {
+            role: "high gain drive",
+            preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur", "Big Muff"],
+            reason: "Replace the current saturation source with a lighter or less aggressive installed alternative.",
+            requiresProfile: true
+          },
+          cabinetRole()
+        ]);
+      }
       return dedupeRoles([
         {
           role: "input gain",
