@@ -242,15 +242,29 @@ export class ExecutePedalboardPlanService {
           postSaveNotes.push(
             `Wrote ${input.plan.snapshots.length} named snapshots via SSH: ${input.plan.snapshots.map((s) => s.name).join(", ")}.`
           );
-          // Reload the bundle so the device reads the new snapshots.json from disk
-          // immediately. Without this, the UI still shows only "Default" until the
-          // user manually reloads the board.
+          // Reload the bundle so the device reads the new snapshots.json from disk.
+          // Without this, the UI still shows only "Default" until the user manually
+          // reloads the board. The firmware may briefly be busy after /pedalboard/save,
+          // so we retry once after a short delay if the first attempt fails.
           if (this.writeApi) {
-            await this.writeApi.postForm(
+            const reloadResult = await this.writeApi.postForm(
               "/pedalboard/load_bundle/",
               { bundlepath: bundlePathForSnapshots },
               "reload bundle so device reads new snapshots.json from disk"
             );
+            if (!reloadResult.ok) {
+              await new Promise<void>((resolve) => { setTimeout(resolve, 600); });
+              const retryResult = await this.writeApi.postForm(
+                "/pedalboard/load_bundle/",
+                { bundlepath: bundlePathForSnapshots },
+                "retry reload bundle after short delay"
+              );
+              if (!retryResult.ok) {
+                postSaveNotes.push(
+                  `Bundle reload after snapshot write failed (HTTP ${retryResult.status}). Load the board manually from the library.`
+                );
+              }
+            }
           }
         } catch (err) {
           postSaveNotes.push(
