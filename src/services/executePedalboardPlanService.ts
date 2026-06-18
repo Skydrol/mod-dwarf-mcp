@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import type { SshClient } from "../clients/sshClient.js";
 import type { ClearCurrentPedalboardService } from "./clearCurrentPedalboardService.js";
 import type { DryBundleService } from "./dryBundleService.js";
 import type { LiveGraphAuthoringPlanService } from "./liveGraphAuthoringPlan.js";
@@ -36,7 +37,8 @@ export class ExecutePedalboardPlanService {
     private readonly pedalboardService: PedalboardService,
     private readonly saveLoadedPedalboardService: SaveLoadedPedalboardService,
     private readonly clearCurrentPedalboardService: ClearCurrentPedalboardService,
-    private readonly writeApi: WriteHttpClient | null
+    private readonly writeApi: WriteHttpClient | null,
+    private readonly sshClient: SshClient | null = null
   ) {}
 
   async execute(input: {
@@ -142,21 +144,32 @@ export class ExecutePedalboardPlanService {
       });
     }
 
-    // After the bundle is on disk, save named snapshots via the correct sequence:
-    // rename slot 0, create remaining slots via /snapshot/saveas, restore to slot 0,
-    // then persist in-place with asNew:0 (works because the bundle is now the active one).
+    // After the bundle is on disk, write snapshots.json via SFTP with the correct
+    // snapshot names and computed parameter values. The HTTP /effect/parameter/set
+    // endpoint only changes the live audio engine state — it does not update the
+    // device's snapshot capture state, so values must be written directly to disk.
     const postSaveNotes: string[] = [];
-    if (saveResult.saved.success && input.plan.snapshots.length > 0) {
-      const postSaveCalls = this.liveGraphAuthoringPlanService.buildPostSaveSnapshotCalls(
-        authoringPlan.plugins,
-        input.plan.snapshots,
-        savedTitle
+    if (saveResult.saved.success && input.plan.snapshots.length > 0 && this.sshClient) {
+      const bundlePath = parseBundlePath(
+        saveResult.saved.attempted && saveResult.saved.success ? saveResult.saved.body : undefined
       );
-      const postSaveResults = await this.applyPostSaveCalls(postSaveCalls);
-      for (const r of postSaveResults) {
-        postSaveNotes.push(
-          `[post-save] ${r.method} ${r.path} → HTTP ${r.status} ${r.ok ? "OK" : "FAIL"}: ${r.body.slice(0, 120)}`
+      if (bundlePath) {
+        const content = this.liveGraphAuthoringPlanService.buildSnapshotsJsonContent(
+          authoringPlan.plugins,
+          input.plan.snapshots
         );
+        try {
+          await this.sshClient.sshWriteFile(`${bundlePath}/snapshots.json`, content);
+          postSaveNotes.push(
+            `Wrote ${input.plan.snapshots.length} named snapshots via SSH: ${input.plan.snapshots.map((s) => s.name).join(", ")}.`
+          );
+        } catch (err) {
+          postSaveNotes.push(
+            `SSH snapshot write failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      } else {
+        postSaveNotes.push("Could not extract bundlepath from save response; snapshots not patched.");
       }
     }
 
@@ -294,24 +307,6 @@ export class ExecutePedalboardPlanService {
     } catch {
       return { removed: [], failed: [], notes: [] };
     }
-  }
-
-  private async applyPostSaveCalls(
-    apiCalls: LiveGraphApiCall[]
-  ): Promise<Array<{ method: string; path: string; ok: boolean; status: number; body: string }>> {
-    const results: Array<{ method: string; path: string; ok: boolean; status: number; body: string }> = [];
-    if (!this.writeApi) return results;
-    for (const call of apiCalls) {
-      const response = await this.executeLiveCall(call);
-      results.push({
-        method: call.method,
-        path: call.path,
-        ok: response.ok,
-        status: response.status,
-        body: response.text.slice(0, 200)
-      });
-    }
-    return results;
   }
 
   private async applyLiveGraphPlan(apiCalls: LiveGraphApiCall[]): Promise<{
@@ -470,4 +465,14 @@ function normalizeLiveCallPath(path: string): string {
   const [source, target] = payload.split(",", 2);
   if (!source || !target) return path;
   return `/effect/connect/${uiGraphRef(source)},${uiGraphRef(target)}`;
+}
+
+function parseBundlePath(responseBody: string | undefined): string | null {
+  if (!responseBody) return null;
+  try {
+    const parsed = JSON.parse(responseBody) as { bundlepath?: string };
+    return typeof parsed?.bundlepath === "string" ? parsed.bundlepath : null;
+  } catch {
+    return null;
+  }
 }

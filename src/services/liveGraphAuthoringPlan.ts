@@ -384,6 +384,31 @@ export class LiveGraphAuthoringPlanService {
     return calls;
   }
 
+  buildSnapshotsJsonContent(
+    plugins: LiveGraphPluginPlan[],
+    snapshots: PedalboardPlan["snapshots"]
+  ): string {
+    const snapshotList = snapshots.map((snapshot, i) => {
+      const data: Record<string, {
+        ports: Record<string, number>;
+        parameters: Record<string, never>;
+        preset: string;
+        bypassed: boolean;
+      }> = {};
+      for (const plugin of plugins) {
+        const ports: Record<string, number> = {};
+        for (const param of plugin.parameterPlans) {
+          ports[param.symbol] = param.resolvedRange
+            ? snapshotParamValue(param.resolvedRange, param.value, i, snapshots.length)
+            : param.value;
+        }
+        data[plugin.instance] = { ports, parameters: {} as Record<string, never>, preset: "", bypassed: false };
+      }
+      return { name: snapshot.name, data };
+    });
+    return JSON.stringify({ current: 0, snapshots: snapshotList }, null, 4);
+  }
+
   buildPostSaveSnapshotCalls(
     plugins: LiveGraphPluginPlan[],
     snapshots: PedalboardPlan["snapshots"],

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type { CommandRunner } from "../clients/sshClient.js";
+import type { SshClient } from "../clients/sshClient.js";
 import type { HttpClient } from "../clients/httpClient.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
 import { pluginCatalog } from "../data/pluginCatalog.js";
@@ -30,7 +30,7 @@ import { registerTools } from "./toolRegistry.js";
 import type { ToolContext } from "../tools/toolContext.js";
 
 export interface ServerDependencies {
-  ssh: CommandRunner;
+  ssh: SshClient;
   http: HttpClient;
   writeHttp?: WriteHttpClient | null;
   writeToolsEnabled?: boolean;
@@ -104,7 +104,8 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     context.pedalboardService,
     context.saveLoadedPedalboardService,
     context.clearCurrentPedalboardService,
-    deps.writeHttp ?? null
+    deps.writeHttp ?? null,
+    deps.ssh
   );
   context.effectRecipeToPedalboardPlanService = new EffectRecipeToPedalboardPlanService(
     context.pluginService,

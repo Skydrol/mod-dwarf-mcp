@@ -52,6 +52,60 @@ export function assertReadOnlyCommand(command: string): void {
 export class SshClient implements CommandRunner {
   constructor(private readonly config: SshConfig) {}
 
+  // Write file via exec+stdin. Works on devices without SFTP subsystem.
+  // The shell command runs through /bin/sh -c so that > redirection is handled.
+  async sshWriteFile(remotePath: string, content: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const client = new Client();
+      const timeout = setTimeout(() => {
+        client.end();
+        reject(new Error(`SSH timeout writing: ${remotePath}`));
+      }, this.config.timeoutMs);
+
+      client
+        .on("ready", () => {
+          const escaped = remotePath.replace(/'/g, "'\\''");
+          // Use explicit shell so > redirection works; drain stdout+stderr so close fires.
+          client.exec(`/bin/sh -c 'cat > '"'"'${escaped}'"'"''`, (err, stream) => {
+            if (err) {
+              clearTimeout(timeout);
+              client.end();
+              reject(err);
+              return;
+            }
+            let exitCode: number | null = null;
+            stream
+              .on("exit", (code: number | null) => {
+                exitCode = code;
+              })
+              .on("close", () => {
+                clearTimeout(timeout);
+                client.end();
+                if (exitCode === 0 || exitCode === null) {
+                  resolve();
+                } else {
+                  reject(new Error(`cat exited with code ${exitCode} writing ${remotePath}`));
+                }
+              })
+              .on("data", () => { /* drain stdout */ });
+            stream.stderr.on("data", () => { /* drain stderr */ });
+            stream.write(Buffer.from(content, "utf8"));
+            stream.end();
+          });
+        })
+        .on("error", (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        })
+        .connect({
+          host: this.config.host,
+          username: this.config.username,
+          password: this.config.password,
+          readyTimeout: this.config.timeoutMs
+        });
+    });
+  }
+
   async exec(command: string): Promise<CommandResult> {
     assertReadOnlyCommand(command);
 

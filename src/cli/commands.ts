@@ -142,7 +142,8 @@ async function cmdCreateFromRecipe(args: string[], clients: CliClients): Promise
     pedalboardService,
     saveLoadedService,
     new ClearCurrentPedalboardService(clients.writeHttp, clients.writeToolsEnabled),
-    clients.writeHttp
+    clients.writeHttp,
+    clients.ssh
   );
 
   const plan = await recipeService.convert(recipe);
