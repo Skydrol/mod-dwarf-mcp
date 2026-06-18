@@ -41,11 +41,11 @@ export class LiveGraphAuthoringPlanService {
       included: plan.snapshots.length > 0,
       valid: true,
       note:
-        plan.snapshots.length > 0
-          ? plan.snapshots.length === 1
-            ? `If confirmed later, the current snapshot can be saved using '${plan.snapshots[0].name}'.`
-            : "Multiple snapshots were planned, but the current live MOD API flow can only save the current snapshot."
-          : "No snapshot save call requested."
+        plan.snapshots.length > 1
+          ? `${plan.snapshots.length} snapshots will be saved: ${plan.snapshots.map((s) => s.name).join(", ")}.`
+          : plan.snapshots.length === 1
+            ? `1 snapshot will be saved: ${plan.snapshots[0].name}.`
+            : "No snapshot save requested; device will retain current default state."
     };
 
     const title = this.titleFromPlan(plan);
@@ -61,7 +61,7 @@ export class LiveGraphAuthoringPlanService {
       this.toPluginPlan(resolved, layout[index])
     );
     const connectionCalls = this.buildConnectionCalls(resolvedPlugins);
-    const apiCalls = this.buildApiCalls(pluginPlans, connectionCalls, snapshotSave.included, title);
+    const apiCalls = this.buildApiCalls(pluginPlans, connectionCalls, plan.snapshots, title);
 
     const valid =
       pluginUris.valid &&
@@ -341,42 +341,52 @@ export class LiveGraphAuthoringPlanService {
   private buildApiCalls(
     plugins: LiveGraphPluginPlan[],
     connectionCalls: LiveGraphApiCall[],
-    includeSnapshotSave: boolean,
+    snapshots: PedalboardPlan["snapshots"],
     title: string
   ): LiveGraphApiCall[] {
     const calls: LiveGraphApiCall[] = [];
+
     for (const plugin of plugins) {
       calls.push(plugin.addCall);
     }
-
     calls.push(...connectionCalls);
 
-    for (const plugin of plugins) {
-      for (const parameter of plugin.parameterPlans) {
-        calls.push(this.liveParameterService.buildParameterCall(plugin.instance, parameter));
+    if (snapshots.length === 0) {
+      for (const plugin of plugins) {
+        for (const parameter of plugin.parameterPlans) {
+          calls.push(this.liveParameterService.buildParameterCall(plugin.instance, parameter));
+        }
       }
-    }
-
-    if (includeSnapshotSave) {
-      calls.push({
-        method: "POST",
-        path: "/snapshot/save",
-        purpose: "save current snapshot",
-        body: { kind: "none" }
-      });
+    } else {
+      for (let i = 0; i < snapshots.length; i++) {
+        for (const plugin of plugins) {
+          for (const parameter of plugin.parameterPlans) {
+            const value = parameter.resolvedRange
+              ? snapshotParamValue(parameter.resolvedRange, parameter.value, i, snapshots.length)
+              : parameter.value;
+            calls.push(
+              this.liveParameterService.buildParameterCallWithValue(
+                plugin.instance,
+                parameter,
+                value
+              )
+            );
+          }
+        }
+        calls.push({
+          method: "POST",
+          path: "/snapshot/save",
+          purpose: `save snapshot ${i}: ${snapshots[i].name}`,
+          body: { kind: "form", fields: { id: i, name: snapshots[i].name } }
+        });
+      }
     }
 
     calls.push({
       method: "POST",
       path: "/pedalboard/save",
       purpose: "save current live graph as a new pedalboard",
-      body: {
-        kind: "form",
-        fields: {
-          title,
-          asNew: 1
-        }
-      }
+      body: { kind: "form", fields: { title, asNew: 1 } }
     });
 
     return calls;
@@ -422,4 +432,15 @@ function slug(value: string): string {
 
 function legacyEscape(value: string): string {
   return escape(value);
+}
+
+function snapshotParamValue(
+  range: { min: number; max: number },
+  baseValue: number,
+  snapshotIndex: number,
+  snapshotCount: number
+): number {
+  if (snapshotCount <= 1) return baseValue;
+  const t = snapshotIndex / (snapshotCount - 1);
+  return range.min + (range.max - range.min) * t;
 }

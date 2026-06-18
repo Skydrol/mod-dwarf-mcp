@@ -336,8 +336,12 @@ const liveGraphParameterPlanSchema = z
     default: z.number().optional(),
     unit: z.string().optional(),
     properties: z.array(z.string()),
-    requestedRange: z.unknown().optional(),
-    resolvedRange: z.unknown().optional(),
+    requestedRange: z
+      .object({ min: z.number(), max: z.number(), unit: z.string().optional() })
+      .optional(),
+    resolvedRange: z
+      .object({ min: z.number(), max: z.number(), unit: z.string().optional() })
+      .optional(),
     value: z.number()
   })
   .passthrough();

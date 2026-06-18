@@ -46,17 +46,27 @@ export class ExecutePedalboardPlanService {
   }): Promise<ExecutePedalboardPlanResult> {
     const title = (input.title ?? this.defaultTitle(input.plan)).trim();
     if (!input.confirm) {
-      return this.notAttempted(input.plan.operationMode, title, "Tool input must include confirm=true.");
+      return this.notAttempted(
+        input.plan.operationMode,
+        title,
+        "Tool input must include confirm=true."
+      );
     }
 
     const dryBundle = await this.dryBundleService.createDryBundle(input.plan);
-    if (input.plan.operationMode === "new_board" || input.plan.operationMode === "replace_current_board") {
+    if (
+      input.plan.operationMode === "new_board" ||
+      input.plan.operationMode === "replace_current_board"
+    ) {
       // /reset ensures a fully clean in-memory graph. Per-plugin removes via
       // clearCurrentPedalboardService are unreliable because /pedalboard/info/
       // (without bundlepath) returns 400 on some firmware versions, causing the
       // service to skip all removals silently.
       if (this.writeApi) {
-        await this.writeApi.getBytes("/reset", "reset board to ensure clean graph before live apply");
+        await this.writeApi.getBytes(
+          "/reset",
+          "reset board to ensure clean graph before live apply"
+        );
       }
     }
 
@@ -148,7 +158,9 @@ export class ExecutePedalboardPlanService {
       !compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection.pluginsUsed)
         ? ["Saved bundle plugin list did not exactly match the planned chain."]
         : []),
-      saved ? `Saved as a new pedalboard as '${savedTitle}'.` : "Save failed after applying the live graph.",
+      saved
+        ? `Saved as a new pedalboard as '${savedTitle}'.`
+        : "Save failed after applying the live graph.",
       loaded ? "Live graph remains active after save." : "Active graph did not remain loaded."
     ];
     const reportPath = await this.writeReport(title, input.plan, true, saved, loaded, notes);
@@ -295,7 +307,7 @@ export class ExecutePedalboardPlanService {
     }> = [];
 
     for (const call of apiCalls) {
-      if (call.path === "/pedalboard/save" || call.path === "/snapshot/save") continue;
+      if (call.path === "/pedalboard/save") continue;
       const response = await this.executeLiveCall(call);
       executed.push({
         method: call.method,
@@ -395,10 +407,17 @@ function timestamp(): string {
 }
 
 function normalizeTitle(value: string): string {
-  return value.replace(/\.pedalboard$/, "").replace(/_/g, " ").trim().toLowerCase();
+  return value
+    .replace(/\.pedalboard$/, "")
+    .replace(/_/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
-function compareBundlePlugins(expectedPluginUris: string[], actualPlugins: Array<{ uri: string }>): boolean {
+function compareBundlePlugins(
+  expectedPluginUris: string[],
+  actualPlugins: Array<{ uri: string }>
+): boolean {
   const actualPluginUris = actualPlugins.map((plugin) => plugin.uri).filter(Boolean);
   if (actualPluginUris.length !== expectedPluginUris.length) return false;
   const expected = [...expectedPluginUris].sort();

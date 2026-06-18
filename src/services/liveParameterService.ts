@@ -93,13 +93,21 @@ export class LiveParameterService {
   }
 
   buildParameterCall(instance: string, parameter: LiveGraphParameterPlan): LiveGraphApiCall {
+    return this.buildParameterCallWithValue(instance, parameter, parameter.value);
+  }
+
+  buildParameterCallWithValue(
+    instance: string,
+    parameter: LiveGraphParameterPlan,
+    value: number
+  ): LiveGraphApiCall {
     return {
       method: "POST",
       path: "/effect/parameter/set/",
-      purpose: `set ${instance}/${parameter.symbol} to ${formatNumber(parameter.value)}`,
+      purpose: `set ${instance}/${parameter.symbol} to ${formatNumber(value)}`,
       body: {
         kind: "json",
-        value: `${uiGraphRef(instance)}/${parameter.symbol}/${formatNumber(parameter.value)}`
+        value: `${uiGraphRef(instance)}/${parameter.symbol}/${formatNumber(value)}`
       }
     };
   }

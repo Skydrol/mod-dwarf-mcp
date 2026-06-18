@@ -161,8 +161,8 @@ describe("LiveGraphAuthoringPlanService", () => {
 
     expect(plan.validation.valid).toBe(true);
     expect(plan.apiCalls.map((call) => call.path)).toEqual([
-      "/effect/add//graph/gain_1?x=120&y=120&uri=http%3A//moddevices.com/plugins/mod-devel/Gain",
-      "/effect/add//graph/mverb_2?x=360&y=480&uri=http%3A//distrho.sf.net/plugins/MVerb",
+      "/effect/add//graph/gain_1?x=120&y=260&uri=http%3A//moddevices.com/plugins/mod-devel/Gain",
+      "/effect/add//graph/mverb_2?x=940&y=500&uri=http%3A//distrho.sf.net/plugins/MVerb",
       "/effect/connect/capture_1,gain_1/In",
       "/effect/connect/gain_1/Out,mverb_2/in1",
       "/effect/connect/gain_1/Out,mverb_2/in2",

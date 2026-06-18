@@ -29,8 +29,8 @@ export interface LiveGraphParameterPlan {
   default?: number;
   unit?: string;
   properties: string[];
-  requestedRange?: unknown;
-  resolvedRange?: unknown;
+  requestedRange?: LiveGraphPortRange;
+  resolvedRange?: LiveGraphPortRange;
   value: number;
 }
 
