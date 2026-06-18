@@ -88,10 +88,6 @@ export class EffectRecipeToPedalboardPlanService {
     plugins: PluginCandidate[],
     knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
   ): Promise<PlannedPlugin[]> {
-    if (isElephantRecipe(recipe)) {
-      return this.buildElephantChain(recipe, plugins, knowledgeDb);
-    }
-
     const chain: PlannedPlugin[] = [];
 
     for (let index = 0; index < recipe.effects.length; index += 1) {
@@ -117,59 +113,6 @@ export class EffectRecipeToPedalboardPlanService {
         reason: effect.character,
         suggestedInstance: `${slug(effect.role)}_${index + 1}`,
         parameterRanges: mergeExplicitParameters(profile.parameterRanges ?? {}, effect.parameters)
-      });
-    }
-
-    return chain;
-  }
-
-  private async buildElephantChain(
-    recipe: EffectRecipe,
-    plugins: PluginCandidate[],
-    _knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
-  ): Promise<PlannedPlugin[]> {
-    const chain: PlannedPlugin[] = [];
-    const roles: Array<{ role: string; preferred: string[]; reason: string }> = [
-      {
-        role: "fuzz",
-        preferred: ["Open Big Muff", "Big Muff", "GxSuperFuzz", "Fuzz", "GxFuzzFaceFullerMod"],
-        reason: "Core fuzzy riff texture for Elephant."
-      },
-      {
-        role: "high gain drive",
-        preferred: ["AIDA-X", "DS1", "GxSD1", "ChowCentaur"],
-        reason: "Aggressive drive or amp-like push behind the fuzz."
-      },
-      {
-        role: "cabinet",
-        preferred: ["Vintage Cabinets", "MOD Cabinet", "GxCabinet", "Cabinet Loader"],
-        reason: "Cabinet stage for a dry, direct riff tone."
-      }
-    ];
-
-    for (let index = 0; index < roles.length; index += 1) {
-      const spec = roles[index];
-      const selected = selectPreferredPlugin(plugins, spec.preferred);
-      if (!selected) continue;
-
-      const ports = selected.uri
-        ? await this.pluginService.getPluginPorts(selected.uri)
-        : { uri: "", ports: [], audioInputs: [], audioOutputs: [], controlInputs: [] };
-      const profile = this.profileService.resolve(
-        recipeRoleToPlannerRole(spec.role),
-        selected.name,
-        selected.uri,
-        ports,
-        `${recipe.song ?? ""} ${recipe.artist ?? ""} ${spec.reason}`
-      );
-
-      chain.push({
-        role: spec.role,
-        name: selected.name,
-        uri: selected.uri,
-        reason: spec.reason,
-        suggestedInstance: `${slug(spec.role)}_${index + 1}`,
-        parameterRanges: profile.parameterRanges ?? {}
       });
     }
 
@@ -274,13 +217,6 @@ function findPreferredPlugin(plugins: PluginCandidate[], preferred: string[]): P
   return null;
 }
 
-function selectPreferredPlugin(
-  plugins: PluginCandidate[],
-  preferred: string[]
-): PluginCandidate | null {
-  return findPreferredPlugin(plugins, preferred);
-}
-
 function scoreRecipeCandidate(
   plugin: PluginCandidate,
   preferred: string[],
@@ -324,13 +260,6 @@ function recipeRoleToPlannerRole(role: string): string {
   if (normalized.includes("reverb")) return "reverb";
   if (normalized.includes("output")) return "output level";
   return "core tone";
-}
-
-function isElephantRecipe(recipe: EffectRecipe): boolean {
-  return matches(
-    normalize(`${recipe.song ?? ""} ${recipe.artist ?? ""}`),
-    ["elephant", "tameimpala"]
-  );
 }
 
 async function loadDeviceInventoryPlugins(): Promise<PluginCandidate[]> {

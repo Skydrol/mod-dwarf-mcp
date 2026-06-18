@@ -27,6 +27,27 @@ The recipe must contain:
 - snapshot intent
 - safety constraints
 
+**Prefer explicit plugin URIs over everything else.**
+
+The most reliable way to pin a plugin is `preferredPluginUri`. The MCP will look up the plugin by exact URI before falling back to name matching or heuristics.
+
+Use `list_plugins` (format: `"both"`) to get URI + name for every installed plugin, then reference the URI directly in the recipe effect:
+
+```json
+{
+  "role": "delay",
+  "character": "rhythmic eighth-note echo",
+  "preferredPluginUri": "http://moddevices.com/plugins/mod-devel/BollieDelay",
+  "preferredPluginName": "Bollie Delay"
+}
+```
+
+Priority order the MCP uses for plugin selection:
+1. `preferredPluginUri` — exact URI match (most reliable, use this whenever possible)
+2. `preferredPluginName` — name hint, prepended to internal heuristic list
+3. Heuristic matching by role + character string
+4. Scored fallback using the knowledge DB
+
 **Prefer explicit plugin names over generic categories.**
 
 Instead of:
@@ -35,10 +56,12 @@ Instead of:
 modulation, delay, reverb
 ```
 
-Prefer:
+Prefer (with URI):
 
-```
-TAP Chorus/Flanger, Bollie Delay, Dragonfly Hall Reverb
+```json
+{ "role": "modulation", "preferredPluginUri": "...", "preferredPluginName": "TAP Chorus/Flanger" }
+{ "role": "delay",      "preferredPluginUri": "...", "preferredPluginName": "Bollie Delay" }
+{ "role": "reverb",     "preferredPluginUri": "...", "preferredPluginName": "Dragonfly Hall Reverb" }
 ```
 
 The user-facing AI is responsible for deciding which installed plugins best match the requested tone. Do not delegate musical judgment to the MCP.
@@ -128,8 +151,10 @@ Note: `refresh_device_inventory` takes 2–5 minutes on first run. Run it once; 
    - song or artist when known
    - instrument
    - operation mode (`new_board`)
-   - effects with explicit plugin names (from the installed list), roles, and character
+   - effects with explicit plugin URIs (`preferredPluginUri`) and names, roles, and character
+   - optional explicit parameter values per effect (`parameters: { "gain": 0.8 }`)
    - snapshots (named after song sections: Verse, Chorus, Solo, etc.)
+   - optional explicit snapshot parameter overrides (`parameterValues: { "overdrive_1": { "gain": 0.9 } }`)
    - sections that reuse snapshots
 4. Call `create_pedalboard_from_recipe`.
 5. The MCP converts the recipe into a plan and delegates to the execution flow.
@@ -155,6 +180,36 @@ Key constraints:
 - Always provide the **complete** desired plugin list in the recipe, not just what changes. The MCP replaces the entire graph.
 - Use `inspect_pedalboard` to understand the current state before deciding what to change.
 - The board's bundlepath stays the same after modification — no duplicate is created in the library.
+
+### Parameter-Only Update
+
+When you only want to tweak parameter values on an existing board — without removing or re-adding any plugins — use `parameter_only` mode with `modify_current_board` tool and a `bundlePath`.
+
+The MCP will:
+- Load the bundle (sets it as the active board)
+- Skip plugin removal and plugin addition entirely
+- Apply only `effect/parameter/set` calls for parameters in the recipe
+- Write named snapshots via SSH if `parameterValues` are specified in the recipe
+- Save the result back to the **same bundlepath** (in-place)
+
+```json
+{
+  "instrument": "guitar",
+  "operationMode": "parameter_only",
+  "effects": [
+    {
+      "role": "reverb",
+      "character": "less wet",
+      "preferredPluginUri": "http://...",
+      "parameters": { "wet_level": 0.3 }
+    }
+  ],
+  "snapshots": [],
+  "sections": []
+}
+```
+
+Use `modify_current_board` with this recipe and the board's `bundlePath`. The plugin graph is untouched; only parameter values change.
 
 #### Example: Add reverb to a board that only has distortion
 

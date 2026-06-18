@@ -97,6 +97,20 @@ export class ExecutePedalboardPlanService {
       }
     }
 
+    // For parameter_only: load the bundle if provided (sets it as active for in-place save),
+    // but do NOT remove or re-add plugins. Only parameter/set calls will be executed.
+    if (
+      input.plan.operationMode === "parameter_only" &&
+      input.targetBundlepath &&
+      this.writeApi
+    ) {
+      await this.writeApi.postForm(
+        "/pedalboard/load_bundle/",
+        { bundlepath: input.targetBundlepath },
+        "load target bundle before parameter-only update"
+      );
+    }
+
     const authoringPlan = await this.liveGraphAuthoringPlanService.buildPlan(input.plan);
     if (!authoringPlan.validation.valid) {
       return {
@@ -119,7 +133,10 @@ export class ExecutePedalboardPlanService {
       };
     }
 
-    const liveApplyResult = await this.applyLiveGraphPlan(authoringPlan.apiCalls);
+    const liveApplyResult = await this.applyLiveGraphPlan(
+      authoringPlan.apiCalls,
+      input.plan.operationMode === "parameter_only"
+    );
     if (!liveApplyResult.success) {
       return {
         confirmed: true,
@@ -148,10 +165,12 @@ export class ExecutePedalboardPlanService {
     const expectedInstances = authoringPlan.plugins.map((plugin) => plugin.instance);
     const strayCleanup = await this.cleanupStrayPlugins(expectedInstances);
 
-    // For modify_current_board: save in-place (asNew=0) to overwrite the loaded bundle.
+    // For modify_current_board and parameter_only with targetBundlepath: save in-place (asNew=0).
     // For all other modes: save as a new bundle (asNew=1).
     const isModify =
-      input.plan.operationMode === "modify_current_board" && Boolean(input.targetBundlepath);
+      (input.plan.operationMode === "modify_current_board" ||
+        input.plan.operationMode === "parameter_only") &&
+      Boolean(input.targetBundlepath);
 
     let savedTitle = title;
     let savedBundlepath: string | null = null;
@@ -385,7 +404,7 @@ export class ExecutePedalboardPlanService {
     }
   }
 
-  private async applyLiveGraphPlan(apiCalls: LiveGraphApiCall[]): Promise<{
+  private async applyLiveGraphPlan(apiCalls: LiveGraphApiCall[], parameterOnly = false): Promise<{
     success: boolean;
     apiCalls: Array<{
       method: "GET" | "POST";
@@ -416,6 +435,7 @@ export class ExecutePedalboardPlanService {
 
     for (const call of apiCalls) {
       if (call.path === "/pedalboard/save") continue;
+      if (parameterOnly && !call.path.startsWith("/effect/parameter/")) continue;
       const response = await this.executeLiveCall(call);
       executed.push({
         method: call.method,
@@ -437,7 +457,11 @@ export class ExecutePedalboardPlanService {
     return {
       success: true,
       apiCalls: executed,
-      notes: ["Applied the live graph directly through MOD UI API endpoints."]
+      notes: [
+        parameterOnly
+          ? "Applied parameter updates only (no plugin add/connect calls executed)."
+          : "Applied the live graph directly through MOD UI API endpoints."
+      ]
     };
   }
 
