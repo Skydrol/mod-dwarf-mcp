@@ -50,7 +50,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Refresh device inventory",
       description:
-        "Scan the connected MOD Dwarf for device info and installed plugin metadata, regenerate data/deviceInventory.json, and return a summary. No planning, recommendations, or musical enrichment.",
+        "MANDATORY FIRST STEP before any pedalboard creation. Scans all LV2 plugins on the device and writes data/deviceInventory.json and data/pluginKnowledgeDb.json. After this runs, list_plugins returns the full device plugin list (200+) instead of the 34-entry fallback catalog. Takes 2–5 minutes on first run; result persists across sessions.",
       inputSchema: {}
     },
     async (input) => refreshDeviceInventoryTool(input, context)
@@ -83,7 +83,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     "list_plugins",
     {
       title: "List LV2 plugins",
-      description: "List installed LV2 plugin names, URIs, or both.",
+      description: "List installed LV2 plugin names, URIs, or both. Returns all 200+ device plugins when refresh_device_inventory has been run (reads from pluginKnowledgeDb.json). Falls back to the 34-entry hardcoded catalog if the knowledge DB is not yet generated.",
       inputSchema: {
         format: z.enum(["names", "uris", "both"]).default("both")
       }

@@ -43,7 +43,7 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     version: "0.1.0"
   });
 
-  const pluginService = new PluginService(null, pluginCatalog);
+  const pluginService = new PluginService(deps.ssh, pluginCatalog);
   const pedalboardService = new PedalboardService(deps.ssh);
   const context: ToolContext = {
     deviceService: new DeviceService(deps.ssh),

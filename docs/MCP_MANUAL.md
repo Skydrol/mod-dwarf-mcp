@@ -12,12 +12,11 @@ The user-facing AI is the **primary musical decision maker**.
 
 Before requesting pedalboard execution, it must:
 
-1. Call `list_plugins` and read the device inventory.
-2. Read the Plugin Knowledge Database if available.
+1. Call `list_plugins` and read the device inventory (requires `refresh_device_inventory` to have been run at least once).
+2. **Research the tone online.** Search for what effects/pedals the referenced artist or song used. Do this before calling any MCP tool — the device has 200+ plugins and you need to know which ones match the requested style.
 3. Understand the user's musical intent.
-4. Research songs, artists, genres, or production styles if needed.
-5. Select concrete plugins from the installed plugin list.
-6. Build a structured pedalboard recipe.
+4. Select concrete plugins from the installed plugin list that best match the researched tone.
+5. Build a structured pedalboard recipe with explicit plugin names (not generic categories).
 
 The recipe must contain:
 
@@ -79,9 +78,9 @@ The MCP may provide fallback plugin selection only when:
 User
   ↓
 User-Facing AI
-  ↓  (reads)
-Device Inventory + Plugin Knowledge Database
-  ↓  (produces)
+  ↓  (researches online: song, artist, genre, tone)
+  ↓  (reads device inventory via list_plugins)
+  ↓  (crosses online findings against installed plugins)
 Plugin Selection + Pedalboard Recipe
   ↓
 MCP: Validation
@@ -112,25 +111,28 @@ The recipe-based flow is the primary architecture because it separates musical i
 
 ### First Use
 
-When connecting to a MOD Dwarf for the first time in a session:
+When connecting to a MOD Dwarf for the first time (or when `data/pluginKnowledgeDb.json` does not exist yet):
 
-1. Call `get_device_info`.
-2. Call `list_plugins`.
-3. Treat the plugin list as the source of truth for what is physically installed.
-4. If available, call `refresh_device_inventory` to generate the local inventory files.
-5. Keep the discovered plugin list and inventory as your working reference for the rest of the session.
+1. Call `get_device_info` to confirm the device is reachable.
+2. Call `refresh_device_inventory`. **This step is mandatory before any pedalboard creation.** It scans all 200+ LV2 plugins on the device and writes `data/pluginKnowledgeDb.json`, which is the source that `list_plugins` and the recipe converter use to match effects to real plugins. Without it, only 34 hardcoded catalog plugins are visible and non-catalog plugins will fail.
+3. Call `list_plugins` to confirm the full inventory is now accessible.
+4. Keep the discovered plugin list as your working reference for the rest of the session.
+
+Note: `refresh_device_inventory` takes 2–5 minutes on first run. Run it once; the result persists across sessions until a device firmware update changes the installed plugin set.
 
 ### Recipe-Driven Use (Preferred)
 
-1. Build an `EffectRecipe` with:
+1. **Research the reference tone.** Before building the recipe, search online for what effects/pedals/settings the artist or song actually used. Examples: "what gear did Slash use on November Rain?", "guitar tone for Smells Like Teen Spirit". If the user does not name a specific song, use your musical knowledge to suggest a plausible rig.
+2. **Read the device inventory.** Call `list_plugins` and cross your researched effect list against what is installed. Pick the closest available plugin for each role.
+3. **Build an `EffectRecipe`** with:
    - song or artist when known
    - instrument
-   - operation mode
-   - effects with explicit plugin names, roles, and character
-   - snapshots
+   - operation mode (`new_board`)
+   - effects with explicit plugin names (from the installed list), roles, and character
+   - snapshots (named after song sections: Verse, Chorus, Solo, etc.)
    - sections that reuse snapshots
-2. Call `create_pedalboard_from_recipe`.
-3. The MCP converts the recipe into a plan and delegates to the execution flow.
+4. Call `create_pedalboard_from_recipe`.
+5. The MCP converts the recipe into a plan and delegates to the execution flow.
 
 ### Modify an Existing Board
 
