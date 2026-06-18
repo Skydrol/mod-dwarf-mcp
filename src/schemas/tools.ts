@@ -59,7 +59,10 @@ export const effectRecipeSchema = z
           .object({
             role: z.string().min(1),
             character: z.string().min(1),
-            intensity: z.enum(["subtle", "medium", "strong"]).optional()
+            intensity: z.enum(["subtle", "medium", "strong"]).optional(),
+            preferredPluginName: z.string().min(1).optional(),
+            preferredPluginUri: z.string().min(1).optional(),
+            parameters: z.record(z.number()).optional()
           })
           .strict()
       )
@@ -70,7 +73,8 @@ export const effectRecipeSchema = z
           .object({
             name: z.string().min(1),
             description: z.string().min(1),
-            effectFocus: z.record(z.unknown())
+            effectFocus: z.record(z.unknown()),
+            parameterValues: z.record(z.record(z.number())).optional()
           })
           .strict()
       )
@@ -113,7 +117,8 @@ const plannedSnapshotSchema = z
   .object({
     name: z.string().min(1),
     description: z.string().min(1),
-    parameterFocus: z.record(z.string())
+    parameterFocus: z.record(z.string()),
+    parameterValues: z.record(z.record(z.number())).optional()
   })
   .strict();
 

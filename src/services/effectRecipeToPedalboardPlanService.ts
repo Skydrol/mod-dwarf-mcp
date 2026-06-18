@@ -96,7 +96,7 @@ export class EffectRecipeToPedalboardPlanService {
 
     for (let index = 0; index < recipe.effects.length; index += 1) {
       const effect = recipe.effects[index];
-      const selected = this.pickForRecipe(effect.role, effect.character, plugins, knowledgeDb);
+      const selected = this.pickForEffect(effect, plugins, knowledgeDb);
       if (!selected) continue;
 
       const ports = selected.uri
@@ -116,7 +116,7 @@ export class EffectRecipeToPedalboardPlanService {
         uri: selected.uri,
         reason: effect.character,
         suggestedInstance: `${slug(effect.role)}_${index + 1}`,
-        parameterRanges: profile.parameterRanges ?? {}
+        parameterRanges: mergeExplicitParameters(profile.parameterRanges ?? {}, effect.parameters)
       });
     }
 
@@ -176,16 +176,20 @@ export class EffectRecipeToPedalboardPlanService {
     return chain;
   }
 
-  private pickForRecipe(
-    role: string,
-    character: string,
+  private pickForEffect(
+    effect: EffectRecipe["effects"][number],
     plugins: PluginCandidate[],
     knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
   ): PluginCandidate | null {
-    const preferred = preferredNamesForRoleAndCharacter(role, character);
+    if (effect.preferredPluginUri) {
+      const byUri = plugins.find((p) => p.uri === effect.preferredPluginUri);
+      if (byUri) return byUri;
+    }
+    const preferred = effect.preferredPluginName
+      ? [effect.preferredPluginName, ...preferredNamesForRoleAndCharacter(effect.role, effect.character)]
+      : preferredNamesForRoleAndCharacter(effect.role, effect.character);
     const directMatch = findPreferredPlugin(plugins, preferred);
     if (directMatch) return directMatch;
-
     const scored = plugins
       .map((plugin) => ({
         plugin,
@@ -359,8 +363,21 @@ function recipeSnapshotToPlan(snapshot: EffectRecipe["snapshots"][number]): Plan
     description: snapshot.description,
     parameterFocus: Object.fromEntries(
       Object.entries(snapshot.effectFocus).map(([key, value]) => [key, stringifyValue(value)])
-    )
+    ),
+    ...(snapshot.parameterValues ? { parameterValues: snapshot.parameterValues } : {})
   };
+}
+
+function mergeExplicitParameters(
+  base: Record<string, { min: number; max: number; unit?: string }>,
+  explicit?: Record<string, number>
+): Record<string, { min: number; max: number; unit?: string }> {
+  if (!explicit) return base;
+  const result = { ...base };
+  for (const [symbol, value] of Object.entries(explicit)) {
+    result[symbol] = { min: value, max: value };
+  }
+  return result;
 }
 
 function recipeEffectGoal(effect: EffectRecipe["effects"][number]): string {

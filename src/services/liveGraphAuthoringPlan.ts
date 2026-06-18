@@ -398,9 +398,12 @@ export class LiveGraphAuthoringPlanService {
       for (const plugin of plugins) {
         const ports: Record<string, number> = {};
         for (const param of plugin.parameterPlans) {
-          ports[param.symbol] = param.resolvedRange
-            ? snapshotParamValue(param.resolvedRange, param.value, i, snapshots.length)
-            : param.value;
+          const explicit = snapshot.parameterValues?.[plugin.instance]?.[param.symbol];
+          ports[param.symbol] = explicit !== undefined
+            ? explicit
+            : param.resolvedRange
+              ? snapshotParamValue(param.resolvedRange, param.value, i, snapshots.length)
+              : param.value;
         }
         data[plugin.instance] = { ports, parameters: {} as Record<string, never>, preset: "", bypassed: false };
       }
@@ -431,9 +434,12 @@ export class LiveGraphAuthoringPlanService {
     for (let i = 1; i < snapshots.length; i++) {
       for (const plugin of plugins) {
         for (const parameter of plugin.parameterPlans) {
-          const value = parameter.resolvedRange
-            ? snapshotParamValue(parameter.resolvedRange, parameter.value, i, snapshots.length)
-            : parameter.value;
+          const explicit = snapshots[i].parameterValues?.[plugin.instance]?.[parameter.symbol];
+          const value = explicit !== undefined
+            ? explicit
+            : parameter.resolvedRange
+              ? snapshotParamValue(parameter.resolvedRange, parameter.value, i, snapshots.length)
+              : parameter.value;
           calls.push(
             this.liveParameterService.buildParameterCallWithValue(plugin.instance, parameter, value)
           );
@@ -451,9 +457,12 @@ export class LiveGraphAuthoringPlanService {
     if (snapshots.length > 1) {
       for (const plugin of plugins) {
         for (const parameter of plugin.parameterPlans) {
-          const value = parameter.resolvedRange
-            ? snapshotParamValue(parameter.resolvedRange, parameter.value, 0, snapshots.length)
-            : parameter.value;
+          const explicit = snapshots[0].parameterValues?.[plugin.instance]?.[parameter.symbol];
+          const value = explicit !== undefined
+            ? explicit
+            : parameter.resolvedRange
+              ? snapshotParamValue(parameter.resolvedRange, parameter.value, 0, snapshots.length)
+              : parameter.value;
           calls.push(
             this.liveParameterService.buildParameterCallWithValue(plugin.instance, parameter, value)
           );

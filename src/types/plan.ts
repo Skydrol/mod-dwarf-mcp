@@ -11,12 +11,16 @@ export interface EffectRecipeEffect {
   role: string;
   character: string;
   intensity?: EffectRecipeIntensity;
+  preferredPluginName?: string;
+  preferredPluginUri?: string;
+  parameters?: Record<string, number>;
 }
 
 export interface EffectRecipeSnapshot {
   name: string;
   description: string;
   effectFocus: Record<string, unknown>;
+  parameterValues?: Record<string, Record<string, number>>;
 }
 
 export interface EffectRecipeSection {
@@ -53,6 +57,7 @@ export interface PlannedSnapshot {
   name: string;
   description: string;
   parameterFocus: Record<string, string>;
+  parameterValues?: Record<string, Record<string, number>>;
 }
 
 export interface PedalboardPlan {
