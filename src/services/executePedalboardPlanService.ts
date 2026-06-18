@@ -142,6 +142,24 @@ export class ExecutePedalboardPlanService {
       });
     }
 
+    // After the bundle is on disk, save named snapshots via the correct sequence:
+    // rename slot 0, create remaining slots via /snapshot/saveas, restore to slot 0,
+    // then persist in-place with asNew:0 (works because the bundle is now the active one).
+    const postSaveNotes: string[] = [];
+    if (saveResult.saved.success && input.plan.snapshots.length > 0) {
+      const postSaveCalls = this.liveGraphAuthoringPlanService.buildPostSaveSnapshotCalls(
+        authoringPlan.plugins,
+        input.plan.snapshots,
+        savedTitle
+      );
+      const postSaveResults = await this.applyPostSaveCalls(postSaveCalls);
+      for (const r of postSaveResults) {
+        postSaveNotes.push(
+          `[post-save] ${r.method} ${r.path} → HTTP ${r.status} ${r.ok ? "OK" : "FAIL"}: ${r.body.slice(0, 120)}`
+        );
+      }
+    }
+
     const savedBundleMatches =
       Boolean(saveResult.saved.success) &&
       Boolean(saveResult.savedBundleInspection) &&
@@ -154,6 +172,7 @@ export class ExecutePedalboardPlanService {
       ...liveApplyResult.notes,
       ...strayCleanup.notes,
       ...saveResult.notes,
+      ...postSaveNotes,
       ...(saveResult.savedBundleInspection &&
       !compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection.pluginsUsed)
         ? ["Saved bundle plugin list did not exactly match the planned chain."]
@@ -275,6 +294,24 @@ export class ExecutePedalboardPlanService {
     } catch {
       return { removed: [], failed: [], notes: [] };
     }
+  }
+
+  private async applyPostSaveCalls(
+    apiCalls: LiveGraphApiCall[]
+  ): Promise<Array<{ method: string; path: string; ok: boolean; status: number; body: string }>> {
+    const results: Array<{ method: string; path: string; ok: boolean; status: number; body: string }> = [];
+    if (!this.writeApi) return results;
+    for (const call of apiCalls) {
+      const response = await this.executeLiveCall(call);
+      results.push({
+        method: call.method,
+        path: call.path,
+        ok: response.ok,
+        status: response.status,
+        body: response.text.slice(0, 200)
+      });
+    }
+    return results;
   }
 
   private async applyLiveGraphPlan(apiCalls: LiveGraphApiCall[]): Promise<{

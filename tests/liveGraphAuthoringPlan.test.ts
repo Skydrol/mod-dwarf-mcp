@@ -171,15 +171,13 @@ describe("LiveGraphAuthoringPlanService", () => {
       "/effect/parameter/set/",
       "/effect/parameter/set/",
       "/effect/parameter/set/",
-      "/snapshot/save",
       "/pedalboard/save"
     ]);
 
     expect(plan.apiCalls[0].method).toBe("GET");
     expect(plan.apiCalls[2].method).toBe("GET");
     expect(plan.apiCalls[7].method).toBe("POST");
-    expect(plan.apiCalls[10].path).toBe("/snapshot/save");
-    expect(plan.apiCalls[11].body).toEqual({
+    expect(plan.apiCalls[10].body).toEqual({
       kind: "form",
       fields: {
         title: "guitar clean ambient",
@@ -202,6 +200,22 @@ describe("LiveGraphAuthoringPlanService", () => {
       kind: "json",
       value: "/graph/mverb_2/decay/2.5"
     });
+
+    // postSaveApiCalls is always empty; the executor builds them after save with the actual title
+    expect(plan.postSaveApiCalls).toEqual([]);
+
+    // buildPostSaveSnapshotCalls produces the correct calls when given the actual saved title
+    const postSaveCalls = service.buildPostSaveSnapshotCalls(
+      plan.plugins,
+      plan.sourcePlan.snapshots,
+      "guitar clean ambient"
+    );
+    expect(postSaveCalls.map((c) => c.path)).toEqual(["/snapshot/save", "/pedalboard/save"]);
+    expect(postSaveCalls[0].body).toEqual({ kind: "form", fields: { id: 0, name: "Base" } });
+    expect(postSaveCalls[1].body).toEqual({
+      kind: "form",
+      fields: { title: "guitar clean ambient", asNew: 0 }
+    });
   });
 
   it("omits snapshot/save when no snapshots are requested", async () => {
@@ -214,6 +228,7 @@ describe("LiveGraphAuthoringPlanService", () => {
     expect(plan.validation.valid).toBe(true);
     expect(plan.apiCalls.some((call) => call.path === "/snapshot/save")).toBe(false);
     expect(plan.apiCalls.at(-1)?.path).toBe("/pedalboard/save");
+    expect(plan.postSaveApiCalls).toEqual([]);
   });
 
   it("reports invalid plans when a parameter has no matching port", async () => {

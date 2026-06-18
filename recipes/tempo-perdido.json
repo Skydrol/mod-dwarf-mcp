@@ -1,0 +1,35 @@
+{
+  "song": "Tempo Perdido",
+  "artist": "Legião Urbana",
+  "instrument": "guitar",
+  "operationMode": "new_board",
+  "effects": [
+    {
+      "role": "chorus",
+      "character": "lush aquatic shimmer, 80s style",
+      "intensity": "medium"
+    },
+    {
+      "role": "reverb",
+      "character": "medium hall, warm and expansive",
+      "intensity": "medium"
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "Verso",
+      "description": "Chorus sutil, reverb amplo — tom introspectivo",
+      "effectFocus": { "chorus": "subtle", "reverb": "medium" }
+    },
+    {
+      "name": "Refrão",
+      "description": "Chorus mais pronunciado, reverb aberto — tom expansivo",
+      "effectFocus": { "chorus": "strong", "reverb": "strong" }
+    }
+  ],
+  "sections": [
+    { "name": "Intro", "snapshot": "Verso" },
+    { "name": "Verso", "snapshot": "Verso" },
+    { "name": "Refrão", "snapshot": "Refrão" }
+  ]
+}

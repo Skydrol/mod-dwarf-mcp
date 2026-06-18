@@ -62,6 +62,7 @@ export class LiveGraphAuthoringPlanService {
     );
     const connectionCalls = this.buildConnectionCalls(resolvedPlugins);
     const apiCalls = this.buildApiCalls(pluginPlans, connectionCalls, plan.snapshots, title);
+    const postSaveApiCalls: LiveGraphApiCall[] = [];
 
     const valid =
       pluginUris.valid &&
@@ -87,6 +88,7 @@ export class LiveGraphAuthoringPlanService {
       },
       plugins: pluginPlans,
       apiCalls: valid ? apiCalls : [],
+      postSaveApiCalls: valid ? postSaveApiCalls : [],
       notes: [
         "Read-only live API plan only; no writes were executed.",
         "effect/add and effect/connect are planned in the same order as the live MOD UI graph bootstrap.",
@@ -358,27 +360,17 @@ export class LiveGraphAuthoringPlanService {
         }
       }
     } else {
-      for (let i = 0; i < snapshots.length; i++) {
-        for (const plugin of plugins) {
-          for (const parameter of plugin.parameterPlans) {
-            const value = parameter.resolvedRange
-              ? snapshotParamValue(parameter.resolvedRange, parameter.value, i, snapshots.length)
-              : parameter.value;
-            calls.push(
-              this.liveParameterService.buildParameterCallWithValue(
-                plugin.instance,
-                parameter,
-                value
-              )
-            );
-          }
+      // Set params for snapshot 0 only — the bundle will be saved in this state.
+      // Remaining snapshot saves happen after the asNew:1 save, via buildPostSaveSnapshotCalls.
+      for (const plugin of plugins) {
+        for (const parameter of plugin.parameterPlans) {
+          const value = parameter.resolvedRange
+            ? snapshotParamValue(parameter.resolvedRange, parameter.value, 0, snapshots.length)
+            : parameter.value;
+          calls.push(
+            this.liveParameterService.buildParameterCallWithValue(plugin.instance, parameter, value)
+          );
         }
-        calls.push({
-          method: "POST",
-          path: "/snapshot/save",
-          purpose: `save snapshot ${i}: ${snapshots[i].name}`,
-          body: { kind: "form", fields: { id: i, name: snapshots[i].name } }
-        });
       }
     }
 
@@ -387,6 +379,69 @@ export class LiveGraphAuthoringPlanService {
       path: "/pedalboard/save",
       purpose: "save current live graph as a new pedalboard",
       body: { kind: "form", fields: { title, asNew: 1 } }
+    });
+
+    return calls;
+  }
+
+  buildPostSaveSnapshotCalls(
+    plugins: LiveGraphPluginPlan[],
+    snapshots: PedalboardPlan["snapshots"],
+    savedTitle: string
+  ): LiveGraphApiCall[] {
+    if (snapshots.length === 0) return [];
+
+    const calls: LiveGraphApiCall[] = [];
+
+    // Rename slot 0 from "Default" to the first snapshot name.
+    calls.push({
+      method: "POST",
+      path: "/snapshot/save",
+      purpose: `rename snapshot 0 to: ${snapshots[0].name}`,
+      body: { kind: "form", fields: { id: 0, name: snapshots[0].name } }
+    });
+
+    // For each additional snapshot: set params then CREATE via /snapshot/saveas.
+    // POST /snapshot/save only renames existing slots; /snapshot/saveas creates new ones.
+    for (let i = 1; i < snapshots.length; i++) {
+      for (const plugin of plugins) {
+        for (const parameter of plugin.parameterPlans) {
+          const value = parameter.resolvedRange
+            ? snapshotParamValue(parameter.resolvedRange, parameter.value, i, snapshots.length)
+            : parameter.value;
+          calls.push(
+            this.liveParameterService.buildParameterCallWithValue(plugin.instance, parameter, value)
+          );
+        }
+      }
+      calls.push({
+        method: "GET",
+        path: `/snapshot/saveas?title=${encodeURIComponent(snapshots[i].name)}`,
+        purpose: `create snapshot ${i}: ${snapshots[i].name}`,
+        body: { kind: "none" }
+      });
+    }
+
+    // Restore to snapshot 0 params so the board opens in the first snapshot's state.
+    if (snapshots.length > 1) {
+      for (const plugin of plugins) {
+        for (const parameter of plugin.parameterPlans) {
+          const value = parameter.resolvedRange
+            ? snapshotParamValue(parameter.resolvedRange, parameter.value, 0, snapshots.length)
+            : parameter.value;
+          calls.push(
+            this.liveParameterService.buildParameterCallWithValue(plugin.instance, parameter, value)
+          );
+        }
+      }
+    }
+
+    // Persist in-place. The device knows which bundle is active from the prior asNew:1 save.
+    calls.push({
+      method: "POST",
+      path: "/pedalboard/save",
+      purpose: "persist snapshot data to the saved bundle",
+      body: { kind: "form", fields: { title: savedTitle, asNew: 0 } }
     });
 
     return calls;

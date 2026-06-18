@@ -86,6 +86,7 @@ export interface LiveGraphAuthoringPlan {
   validation: LiveGraphAuthoringValidation;
   plugins: LiveGraphPluginPlan[];
   apiCalls: LiveGraphApiCall[];
+  postSaveApiCalls: LiveGraphApiCall[];
   notes: string[];
   unsupportedIdeas: string[];
 }

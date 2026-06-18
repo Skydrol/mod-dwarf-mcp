@@ -1,0 +1,42 @@
+What worked correctly
+- The planner produced a sensible ambient guitar chain for the request: TinyGain Mono -> TinyGain Mono -> TAP Chorus/Flanger -> Bollie Delay -> Dragonfly Plate Reverb -> Gain 2x2.
+- The selected plugins exist in the catalog.
+- Dry-run stayed local:
+  - localOnly: true
+  - uploadedToDevice: false
+  - calledModApi: false
+  - modifiedPedalboards: false
+- Confirmation gating worked:
+  - import with confirm: false was refused
+  - save with confirm: false was refused
+
+What behaved incorrectly
+- The delay mapping is wrong:
+  - the plan rejected time for Bollie Delay
+  - that plugin does not map cleanly to the requested rhythmic delay behavior
+- Chorus depth is poorly scaled:
+  - Depth was planned as 0.425 on a 0..100 control
+  - that is effectively too subtle for a psychedelic chorus
+- Snapshot levels are unsafe:
+  - later snapshots push Gain 2x2 to +14.4, +28.8, and +40 dB
+  - that is not volume-consistent and is likely to clip badly
+- Two TinyGain Mono stages in a row is redundant and musically odd for this use case.
+- The live authoring path says only the current snapshot can be saved, so the requested five snapshots are not fully supported there.
+
+What was confusing
+- Dry-run output says no writes happened, but also includes wording that the resulting pedalboard is saved through /pedalboard/save.
+- The user asked for five snapshots, but the live plan says only one snapshot can be saved.
+- The title guitar Tame Impala / Let It Happen inspired is awkward and not user-facing quality.
+
+What could be dangerous on real hardware
+- Snapshot gain jumps are large enough to clip hard and potentially create unsafe volume spikes.
+- Delay/reverb values are not constrained to a clearly safe musical range across snapshots.
+- A user could trust the output and end up with a board that gets much louder in later snapshots.
+
+Suggested issues, by priority
+1. Fix snapshot support in the live apply/save path so it either supports the full requested snapshot set or rejects multi-snapshot requests clearly.
+2. Clamp snapshot parameter generation to safe musical ranges, especially output gain.
+3. Fix delay mapping for Bollie Delay or choose a delay plugin with a real time control.
+4. Fix chorus parameter scaling so depth and mix are musically meaningful.
+5. Remove the duplicate TinyGain Mono stage or explain why two gain stages are needed.
+6. Make dry-run wording unambiguous so it cannot be read as a write operation.
