@@ -45,6 +45,7 @@ export class ExecutePedalboardPlanService {
     plan: PedalboardPlan;
     confirm: boolean;
     title?: string;
+    targetBundlepath?: string;
   }): Promise<ExecutePedalboardPlanResult> {
     const title = (input.title ?? this.defaultTitle(input.plan)).trim();
     if (!input.confirm) {
@@ -56,6 +57,7 @@ export class ExecutePedalboardPlanService {
     }
 
     const dryBundle = await this.dryBundleService.createDryBundle(input.plan);
+
     if (
       input.plan.operationMode === "new_board" ||
       input.plan.operationMode === "replace_current_board"
@@ -68,6 +70,29 @@ export class ExecutePedalboardPlanService {
         await this.writeApi.getBytes(
           "/reset",
           "reset board to ensure clean graph before live apply"
+        );
+      }
+    }
+
+    // For modify mode: read the bundle plugin list, load the bundle (sets active bundle =
+    // target so asNew=0 will overwrite it), then remove each plugin individually.
+    // We MUST NOT call /reset here — /reset also clears the active bundle designation,
+    // which causes asNew=0 to create a new bundle instead of overwriting the target.
+    if (
+      input.plan.operationMode === "modify_current_board" &&
+      input.targetBundlepath &&
+      this.writeApi
+    ) {
+      const bundleInfo = await this.pedalboardService.inspectPedalboard(input.targetBundlepath);
+      await this.writeApi.postForm(
+        "/pedalboard/load_bundle/",
+        { bundlepath: input.targetBundlepath },
+        "load target bundle to set it as the active bundle for in-place save"
+      );
+      for (const plugin of bundleInfo.pluginsUsed) {
+        await this.writeApi.getBytes(
+          `/effect/remove/${uiGraphInstancePath(plugin.instance)}`,
+          `remove existing plugin ${plugin.instance} before applying modified plan`
         );
       }
     }
@@ -123,43 +148,78 @@ export class ExecutePedalboardPlanService {
     const expectedInstances = authoringPlan.plugins.map((plugin) => plugin.instance);
     const strayCleanup = await this.cleanupStrayPlugins(expectedInstances);
 
-    const saveAttempt = await this.saveLoadedPedalboardService.saveAsNew({
-      title,
-      confirm: true,
-      expectedPluginUris,
-      skipLoadedGraphValidation: true,
-      inspectSavedBundle: true
-    });
+    // For modify_current_board: save in-place (asNew=0) to overwrite the loaded bundle.
+    // For all other modes: save as a new bundle (asNew=1).
+    const isModify =
+      input.plan.operationMode === "modify_current_board" && Boolean(input.targetBundlepath);
 
-    let saveResult = saveAttempt;
     let savedTitle = title;
-    if (!saveAttempt.saved.success && saveAttempt.targetExistsBefore) {
-      savedTitle = await this.nextAvailableTitle(title);
-      saveResult = await this.saveLoadedPedalboardService.saveAsNew({
-        title: savedTitle,
+    let savedBundlepath: string | null = null;
+    let saveFailed = false;
+    const saveNotes: string[] = [];
+
+    if (isModify) {
+      const inPlaceResult = await this.doSaveInPlace(title);
+      saveFailed = !inPlaceResult.ok;
+      savedBundlepath = inPlaceResult.bundlepath;
+      const expectedBundlepath = input.targetBundlepath!;
+      if (inPlaceResult.ok) {
+        if (savedBundlepath && savedBundlepath !== expectedBundlepath) {
+          saveNotes.push(
+            `Modified and saved in-place (bundlepath: ${savedBundlepath}).`
+          );
+        } else {
+          saveNotes.push(`Modified and saved in-place: '${savedTitle}'.`);
+        }
+        saveNotes.push("/pedalboard/save called with asNew=0. /banks/save was not called.");
+      } else {
+        saveNotes.push("In-place save (asNew=0) failed after applying the live graph.");
+      }
+    }
+
+    let saveResult: Awaited<ReturnType<typeof this.saveLoadedPedalboardService.saveAsNew>> | null =
+      null;
+    if (!isModify) {
+      const saveAttempt = await this.saveLoadedPedalboardService.saveAsNew({
+        title,
         confirm: true,
         expectedPluginUris,
         skipLoadedGraphValidation: true,
         inspectSavedBundle: true
       });
+
+      saveResult = saveAttempt;
+      if (!saveAttempt.saved.success && saveAttempt.targetExistsBefore) {
+        savedTitle = await this.nextAvailableTitle(title);
+        saveResult = await this.saveLoadedPedalboardService.saveAsNew({
+          title: savedTitle,
+          confirm: true,
+          expectedPluginUris,
+          skipLoadedGraphValidation: true,
+          inspectSavedBundle: true
+        });
+      }
+      saveFailed = !saveResult.saved.success;
+      savedBundlepath = parseBundlePath(
+        saveResult.saved.attempted && saveResult.saved.success ? saveResult.saved.body : undefined
+      );
     }
 
-    // After the bundle is on disk, write snapshots.json via SFTP with the correct
+    // After the bundle is on disk, write snapshots.json via SSH with the correct
     // snapshot names and computed parameter values. The HTTP /effect/parameter/set
     // endpoint only changes the live audio engine state — it does not update the
     // device's snapshot capture state, so values must be written directly to disk.
     const postSaveNotes: string[] = [];
-    if (saveResult.saved.success && input.plan.snapshots.length > 0 && this.sshClient) {
-      const bundlePath = parseBundlePath(
-        saveResult.saved.attempted && saveResult.saved.success ? saveResult.saved.body : undefined
-      );
-      if (bundlePath) {
+    const hasSaved = !saveFailed;
+    if (hasSaved && input.plan.snapshots.length > 0 && this.sshClient) {
+      const bundlePathForSnapshots = isModify ? input.targetBundlepath! : savedBundlepath;
+      if (bundlePathForSnapshots) {
         const content = this.liveGraphAuthoringPlanService.buildSnapshotsJsonContent(
           authoringPlan.plugins,
           input.plan.snapshots
         );
         try {
-          await this.sshClient.sshWriteFile(`${bundlePath}/snapshots.json`, content);
+          await this.sshClient.sshWriteFile(`${bundlePathForSnapshots}/snapshots.json`, content);
           postSaveNotes.push(
             `Wrote ${input.plan.snapshots.length} named snapshots via SSH: ${input.plan.snapshots.map((s) => s.name).join(", ")}.`
           );
@@ -169,29 +229,35 @@ export class ExecutePedalboardPlanService {
           );
         }
       } else {
-        postSaveNotes.push("Could not extract bundlepath from save response; snapshots not patched.");
+        postSaveNotes.push("Could not determine bundlepath for snapshot write.");
       }
     }
 
-    const savedBundleMatches =
-      Boolean(saveResult.saved.success) &&
-      Boolean(saveResult.savedBundleInspection) &&
-      compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection?.pluginsUsed ?? []);
-    const saved = Boolean(saveResult.saved.success) && savedBundleMatches;
+    const savedBundleMatches = isModify
+      ? hasSaved
+      : Boolean(saveResult?.saved.success) &&
+        Boolean(saveResult?.savedBundleInspection) &&
+        compareBundlePlugins(
+          expectedPluginUris,
+          saveResult?.savedBundleInspection?.pluginsUsed ?? []
+        );
+    const saved = savedBundleMatches;
     const loaded = saved;
 
     const notes = [
       ...authoringPlan.notes,
       ...liveApplyResult.notes,
       ...strayCleanup.notes,
-      ...saveResult.notes,
+      ...(saveResult?.notes ?? saveNotes),
       ...postSaveNotes,
-      ...(saveResult.savedBundleInspection &&
+      ...(saveResult?.savedBundleInspection &&
       !compareBundlePlugins(expectedPluginUris, saveResult.savedBundleInspection.pluginsUsed)
         ? ["Saved bundle plugin list did not exactly match the planned chain."]
         : []),
       saved
-        ? `Saved as a new pedalboard as '${savedTitle}'.`
+        ? isModify
+          ? `Modified pedalboard saved in-place as '${savedTitle}'.`
+          : `Saved as a new pedalboard as '${savedTitle}'.`
         : "Save failed after applying the live graph.",
       loaded ? "Live graph remains active after save." : "Active graph did not remain loaded."
     ];
@@ -205,7 +271,7 @@ export class ExecutePedalboardPlanService {
       saved,
       loaded,
       reportPath,
-      apiCalls: [...liveApplyResult.apiCalls, ...saveResult.apiCalls],
+      apiCalls: [...liveApplyResult.apiCalls, ...(saveResult?.apiCalls ?? [])],
       notes
     };
   }
@@ -378,6 +444,22 @@ export class ExecutePedalboardPlanService {
       return this.writeApiOrThrow().postJson(path, body.value, call.purpose);
     }
     return this.writeApiOrThrow().getBytes(path, call.purpose);
+  }
+
+  private async doSaveInPlace(
+    title: string
+  ): Promise<{ ok: boolean; bundlepath: string | null }> {
+    if (!this.writeApi) return { ok: false, bundlepath: null };
+    try {
+      const response = await this.writeApi.postForm(
+        "/pedalboard/save",
+        { title, asNew: 0 },
+        "save in-place to overwrite the active bundle (modify_current_board mode)"
+      );
+      return { ok: response.ok, bundlepath: parseBundlePath(response.text) };
+    } catch {
+      return { ok: false, bundlepath: null };
+    }
   }
 
   private writeApiOrThrow(): WriteHttpClient {

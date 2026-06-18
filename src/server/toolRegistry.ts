@@ -7,6 +7,7 @@ import { refreshDeviceInventoryTool } from "../tools/refreshDeviceInventory.js";
 import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthoringPlan.js";
 import { createPedalboardFromPromptTool } from "../tools/createPedalboardFromPrompt.js";
 import { createPedalboardFromRecipeTool } from "../tools/createPedalboardFromRecipe.js";
+import { modifyCurrentBoardTool } from "../tools/modifyCurrentBoard.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -343,6 +344,64 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => createPedalboardFromRecipeTool(input, context)
+  );
+
+  server.registerTool(
+    "modify_current_board",
+    {
+      title: "Modify an existing pedalboard in-place",
+      description:
+        "Write-gated in-place modifier. Loads the specified bundle, resets the live graph, applies the new recipe, and saves back to the same bundlepath (asNew=0). Use when the user wants to change effects or parameters on an existing pedalboard without creating a new one. Requires bundlepath (from list_pedalboards or inspect_pedalboard), an EffectRecipe describing the complete desired final state, and confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        recipe: z.object({
+          song: z.string().min(1).optional(),
+          artist: z.string().min(1).optional(),
+          instrument: z.string().min(1),
+          operationMode: z.enum([
+            "new_board",
+            "replace_current_board",
+            "modify_current_board",
+            "parameter_only"
+          ]),
+          effects: z
+            .array(
+              z
+                .object({
+                  role: z.string().min(1),
+                  character: z.string().min(1),
+                  intensity: z.enum(["subtle", "medium", "strong"]).optional()
+                })
+                .strict()
+            )
+            .min(1),
+          snapshots: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1),
+                  description: z.string().min(1),
+                  effectFocus: z.record(z.unknown())
+                })
+                .strict()
+            )
+            .default([]),
+          sections: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1),
+                  snapshot: z.string().min(1)
+                })
+                .strict()
+            )
+            .default([])
+        }).strict(),
+        confirm: z.boolean(),
+        title: z.string().min(1).optional()
+      }
+    },
+    async (input) => modifyCurrentBoardTool(input, context)
   );
 
   server.registerTool(

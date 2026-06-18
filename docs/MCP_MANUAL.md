@@ -98,6 +98,7 @@ MOD Dwarf
 | Tool | When to use |
 |------|-------------|
 | `create_pedalboard_from_recipe` | **Preferred.** Caller has a structured recipe with explicit plugin names, roles, and snapshots. |
+| `modify_current_board` | **Preferred for modifications.** Caller wants to change effects or parameters on an existing board. Requires the board's bundlepath and a recipe describing the complete desired final state. |
 | `create_pedalboard_from_prompt` | Fallback. Use when a full recipe is not available and the MCP must assist with planning. |
 | `execute_pedalboard_plan` | Lower-level. Use when the plan has already been fully built outside the MCP. |
 | `plan_pedalboard_from_prompt` | Dry-run inspection only. Use to preview the plan before execution. |
@@ -131,6 +132,52 @@ When connecting to a MOD Dwarf for the first time in a session:
 2. Call `create_pedalboard_from_recipe`.
 3. The MCP converts the recipe into a plan and delegates to the execution flow.
 
+### Modify an Existing Board
+
+When the user wants to change the current board (different effects, different parameters, swap a plugin), use the modify flow instead of creating a new board.
+
+1. Call `list_pedalboards` to find the board the user is referring to and get its `bundlePath`.
+2. Call `inspect_pedalboard` with that `bundlePath` to see which plugins are currently installed, their signal chain, and existing snapshots.
+3. Decide the complete desired final state: which plugins to keep, which to remove, which to add, and what the new parameters and snapshots should be.
+4. Build an `EffectRecipe` with `operationMode: "modify_current_board"` that describes **the complete desired chain** (not just the delta — include unchanged plugins too).
+5. Call `modify_current_board` with the `bundlePath`, the recipe, and `confirm: true`.
+
+The MCP will:
+- Load the bundle onto the device (setting it as the active board)
+- Remove every existing plugin from the live graph
+- Apply the new signal chain from the recipe
+- Save the result back to the **same bundlepath** (in-place, no new board created)
+- Write named snapshots via SSH
+
+Key constraints:
+- Always provide the **complete** desired plugin list in the recipe, not just what changes. The MCP replaces the entire graph.
+- Use `inspect_pedalboard` to understand the current state before deciding what to change.
+- The board's bundlepath stays the same after modification — no duplicate is created in the library.
+
+#### Example: Add reverb to a board that only has distortion
+
+```json
+{
+  "song": "My Song",
+  "artist": "My Band",
+  "instrument": "guitar",
+  "operationMode": "modify_current_board",
+  "effects": [
+    { "role": "distortion", "character": "DS1 for crunch", "intensity": "medium" },
+    { "role": "reverb", "character": "Dragonfly Hall Reverb for ambience", "intensity": "subtle" }
+  ],
+  "snapshots": [
+    { "name": "Dry", "description": "Distortion only, no reverb", "effectFocus": { "reverb": "none" } },
+    { "name": "Wet", "description": "Distortion with room reverb", "effectFocus": { "reverb": "medium" } }
+  ],
+  "sections": []
+}
+```
+
+Call: `modify_current_board({ bundlepath: "/root/.pedalboards/My_Song.pedalboard", recipe: <above>, confirm: true })`
+
+---
+
 ### Prompt-Driven Use (Fallback)
 
 When a structured recipe is not available:
@@ -141,6 +188,15 @@ When a structured recipe is not available:
 4. Call `list_plugins` if you have not already done so in this session.
 5. Cross your own effect list against the installed plugins and adapt it to what the device has.
 6. Only after you have an adapted list of effects and snapshots should you call `create_pedalboard_from_prompt`.
+
+---
+
+## Rules for Modifications
+
+- When the user asks to "change", "add", "remove", or "swap" an effect on an existing board, use `modify_current_board`, not `create_pedalboard_from_recipe`.
+- Always call `inspect_pedalboard` before modifying. Do not guess what is currently on the board.
+- Build the recipe with the **complete desired final state** — include every plugin that should be on the board after modification, not just the ones changing.
+- If the user asks to change only parameters (e.g., "make the reverb less wet"), still send the full plugin list. Sending only the changed plugin will remove everything else.
 
 ---
 
