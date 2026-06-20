@@ -2,7 +2,112 @@
 
 MCP server for the MOD Dwarf pedalboard platform.
 
-The server inspects a MOD Dwarf over SSH and HTTP. It is primarily a read-only inspection tool, but includes write-gated, opt-in tools for pedalboard generation and management that are disabled by default. For prompt-driven creation, `create_pedalboard_from_prompt` is the recommended entry point.
+The server inspects a MOD Dwarf over SSH and HTTP. It includes write-gated, opt-in tools for pedalboard creation and management (disabled by default). For structured creation, `create_pedalboard_from_recipe` is the recommended entry point.
+
+---
+
+## Architecture: Who Does What
+
+**This MCP server is not the musical intelligence layer. It is the execution and translation layer.**
+
+```
+User prompt
+  └─ User's AI agent
+       ├─ interprets musical intent
+       ├─ researches the target tone (artist, song, genre)
+       ├─ decides which effects are needed
+       ├─ decides snapshots and section structure
+       ├─ looks up installed plugins via list_plugins / search_plugins
+       └─ produces a structured EffectRecipe
+           └─ MCP server
+                ├─ validates the recipe shape
+                ├─ maps effect roles to installed plugins
+                ├─ generates a PedalboardPlan
+                ├─ applies and saves to the MOD Dwarf
+                └─ reports what happened
+```
+
+The MCP is the **hand** that operates the MOD Dwarf. The user's AI agent is the **brain** that decides what to play.
+
+### What the MCP does NOT do
+
+- It does not know how Nirvana, Tame Impala, or U2 sound.
+- It does not decide which effects a song needs.
+- It does not replace the user's AI model as the musical reasoning layer.
+- It does not invent musical intent when the `EffectRecipe` is explicit.
+- It does not have a separate creation path outside the safe executor.
+- It should not be expected to autonomously research tone or style.
+
+Any song-specific logic currently present in the codebase (e.g., template matching) is a compatibility shim, not the intended long-term design. The right design is: the AI agent decides, the MCP executes.
+
+### What the AI agent should do
+
+1. **Understand the user's prompt** — in any language, translate to English first.
+2. **Research the target tone** — use training knowledge or search online for the artist, song, pedal chain, and settings.
+3. **Decide the signal chain** — specific effects (not generic categories), in order.
+4. **Decide snapshots** — name them after song sections (Verse, Chorus, Solo, Bridge).
+5. **Look up installed plugins** — call `list_plugins` or `search_plugins`; find the closest available plugin for each role; never invent a URI.
+6. **Produce a structured `EffectRecipe`** — with explicit `preferredPluginUri` for each effect, `parameters` for key values, and `parameterValues` per snapshot if needed.
+7. **Call `create_pedalboard_from_recipe`** — let the MCP handle validation, wiring, and save.
+8. **Report back to the user** — explain what was created, which plugins were chosen, what each snapshot does.
+
+### Example: Tame Impala — Elephant (AI agent's job)
+
+The AI agent researches the tone and produces this recipe. The MCP does not produce this — it only executes it.
+
+```json
+{
+  "song": "Elephant",
+  "artist": "Tame Impala",
+  "instrument": "guitar",
+  "operationMode": "new_board",
+  "effects": [
+    {
+      "role": "fuzz",
+      "character": "thick, gated fuzz — EHX Big Muff style",
+      "intensity": "strong",
+      "preferredPluginUri": "http://moddevices.com/plugins/mod-devel/BigMuff",
+      "preferredPluginName": "Open Big Muff",
+      "parameters": { "sustain": 0.85, "tone": 0.45 }
+    },
+    {
+      "role": "phaser",
+      "character": "slow, deep phase sweep for psychedelic texture",
+      "intensity": "medium",
+      "preferredPluginName": "TAP Phaser",
+      "parameters": { "rate": 0.3, "depth": 0.8 }
+    },
+    {
+      "role": "output_gain",
+      "character": "unity gain trim",
+      "intensity": "subtle",
+      "preferredPluginName": "Gain 2x2"
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "Verse",
+      "description": "Fuzz on, phaser subtle",
+      "effectFocus": { "fuzz": "strong", "phaser": "subtle" },
+      "parameterValues": { "BigMuff": { "sustain": 0.7 }, "TAPPhaser": { "depth": 0.4 } }
+    },
+    {
+      "name": "Chorus Riff",
+      "description": "Full fuzz and phaser for the main riff",
+      "effectFocus": { "fuzz": "strong", "phaser": "medium" },
+      "parameterValues": { "BigMuff": { "sustain": 0.85 }, "TAPPhaser": { "depth": 0.8 } }
+    }
+  ],
+  "sections": [
+    { "name": "Verse", "snapshot": "Verse" },
+    { "name": "Chorus", "snapshot": "Chorus Riff" }
+  ]
+}
+```
+
+The AI agent decided: fuzz style, phaser depth, snapshot intent, section names. The MCP validates that the plugins exist, wires the signal chain, and saves the board.
+
+---
 
 ## How To Use
 

@@ -45,34 +45,38 @@ If `afterState` is null, the save failed — read the `notes` field to understan
 
 ## Responsibility Split
 
-### User-Facing AI
+> **The MCP is the hand. The AI agent is the brain.**
+>
+> The MCP does not know how Nirvana, Tame Impala, or U2 sound. It does not decide which effects a song needs. It executes what the AI agent decides.
 
-The user-facing AI is the **primary musical decision maker**.
+### User-Facing AI — Musical Intelligence Layer
 
-Before requesting pedalboard execution, it must:
+The user-facing AI is the **sole musical decision maker**. The MCP does not replace it.
 
-1. Call `check_inventory_status` to verify the plugin database exists and is not stale.
-2. If `exists=false` or `isStale=true`, run `refresh_device_inventory` **before anything else**.
-3. Call `list_plugins` to get the full inventory (200+ plugins when inventory is current).
-4. **Research the tone online.** Search for what effects/pedals the referenced artist or song used. Do this before calling any MCP tool — the device has 200+ plugins and you need to know which ones match the requested style.
-5. Understand the user's musical intent.
-6. Select concrete plugins from the installed plugin list that best match the researched tone.
-7. Build a structured pedalboard recipe with explicit plugin names (not generic categories).
+**Before calling any creation tool, the AI agent must:**
 
-The recipe must contain:
+1. Call `check_inventory_status` — verify the plugin database exists and is not stale.
+2. If `exists=false` or `isStale=true` — run `refresh_device_inventory` before anything else.
+3. **Research the target tone.** Search online or use training knowledge: what effects, pedals, and settings does the referenced artist or song use? Do this BEFORE calling the MCP. The device has 200+ plugins; knowing which ones match the style is the AI agent's job, not the MCP's.
+4. Call `list_plugins` or `search_plugins` — cross the researched effect list against what is actually installed. Adapt to what the device has.
+5. **Decide the signal chain** — specific plugins in order, not generic categories.
+6. **Decide snapshots** — name them after song sections (Verse, Chorus, Solo).
+7. **Build a structured `EffectRecipe`** — with explicit `preferredPluginUri` for each effect.
+8. Call `create_pedalboard_from_recipe`.
 
-- selected plugins (by name, not by generic category)
-- plugin roles
-- intended usage
-- routing intent
-- snapshot intent
-- safety constraints
+**The recipe must contain:**
+- selected plugins by URI (`preferredPluginUri`) — not by generic category
+- plugin roles and character descriptions
+- parameter values when specific settings matter
+- snapshots with per-snapshot parameter overrides when needed
 
-**Prefer explicit plugin URIs over everything else.**
+**Plugin selection priority (inside the MCP):**
+1. `preferredPluginUri` — exact URI match, always wins (use this)
+2. `preferredPluginName` — name hint, matched before heuristics
+3. Role + character heuristic
+4. Scored fallback using the knowledge DB
 
-The most reliable way to pin a plugin is `preferredPluginUri`. The MCP will look up the plugin by exact URI before falling back to name matching or heuristics.
-
-Use `list_plugins` (format: `"both"`) to get URI + name for every installed plugin, then reference the URI directly in the recipe effect:
+Prefer URIs. The MCP resolves by URI first. Name hints are a fallback, not the primary method.
 
 ```json
 {
@@ -83,56 +87,26 @@ Use `list_plugins` (format: `"both"`) to get URI + name for every installed plug
 }
 ```
 
-Priority order the MCP uses for plugin selection:
-1. `preferredPluginUri` — exact URI match (most reliable, use this whenever possible)
-2. `preferredPluginName` — name hint, prepended to internal heuristic list
-3. Heuristic matching by role + character string
-4. Scored fallback using the knowledge DB
-
-**Prefer explicit plugin names over generic categories.**
-
-Instead of:
-
-```
-modulation, delay, reverb
-```
-
-Prefer (with URI):
-
-```json
-{ "role": "modulation", "preferredPluginUri": "...", "preferredPluginName": "TAP Chorus/Flanger" }
-{ "role": "delay",      "preferredPluginUri": "...", "preferredPluginName": "Bollie Delay" }
-{ "role": "reverb",     "preferredPluginUri": "...", "preferredPluginName": "Dragonfly Hall Reverb" }
-```
-
-The user-facing AI is responsible for deciding which installed plugins best match the requested tone. Do not delegate musical judgment to the MCP.
+**The AI agent is responsible for all musical judgment. Do not delegate that to the MCP.**
 
 ---
 
-### MCP
-
-The MCP is the **execution and validation layer**.
+### MCP — Execution and Translation Layer
 
 The MCP is responsible for:
 
-1. Validating that requested plugins exist on the device.
-2. Validating ports and parameter ranges.
-3. Validating mono/stereo routing compatibility.
-4. Validating safety constraints.
-5. Creating or modifying the pedalboard graph.
+1. Exposing the connected MOD Dwarf's capabilities (plugins, boards, banks, snapshots).
+2. Validating that requested plugins exist on the device.
+3. Validating ports, parameter ranges, and routing compatibility.
+4. Mapping `EffectRecipe` roles to installed plugins.
+5. Generating a `PedalboardPlan` from the recipe.
 6. Building connections between plugins and hardware I/O.
-7. Applying parameters.
-8. Applying layout.
-9. Saving the pedalboard.
-10. Validating fidelity of the saved result.
+7. Applying parameters and layout.
+8. Saving the pedalboard via the MOD HTTP API.
+9. Returning `afterState` so the AI agent can verify the result.
+10. Enforcing write gating (`confirm: true`, `MOD_DWARF_ENABLE_WRITE_TOOLS=true`).
 
-The MCP is **not** the primary musical decision maker.
-
-The MCP may provide fallback plugin selection only when:
-
-- no plugin is specified
-- a requested plugin does not exist on the device
-- a safer alternative is required for technical reasons
+**The MCP is not the musical decision maker.** It may provide fallback plugin selection only when no plugin is specified or the requested one is not installed. In all other cases, the AI agent decides — the MCP executes.
 
 ---
 
