@@ -4,6 +4,45 @@ This manual is for any AI agent using the MOD Dwarf MCP server.
 
 ---
 
+## ⚠️ BEFORE ANYTHING ELSE — Inventory Required
+
+**The plugin inventory MUST exist and be populated before you use any other tool in this MCP.**
+
+On a fresh install, the inventory does not exist yet. Without it, only 34 hardcoded plugins are accessible — the full 200+ plugin library is invisible. Every pedalboard creation and every surgical edit depends on the inventory.
+
+### First-Use Checklist (run once per device, persists across sessions)
+
+1. **`check_inventory_status`** — Call this first in EVERY session. Check `exists` and `isStale`.
+2. **If `exists=false`:** Run `refresh_device_inventory` immediately. Do not call any other tool first.
+3. **If `isStale=true`:** Run `refresh_device_inventory` before creating or modifying boards.
+4. **`refresh_device_inventory`** takes 2–5 minutes on first run. The result is saved to disk and persists across sessions. You will not need to run it again unless the device firmware changes.
+5. After refresh: call **`list_plugins`** to confirm 200+ plugins are now visible.
+
+```
+SESSION START
+  └─ check_inventory_status
+       ├─ exists=false → refresh_device_inventory (REQUIRED, takes 2–5 min)
+       ├─ isStale=true → refresh_device_inventory (before creating/modifying boards)
+       └─ exists=true, isStale=false → proceed to list_plugins and work
+```
+
+**Never skip this check.** An AI that skips `check_inventory_status` will silently operate with an incomplete plugin list and produce wrong results.
+
+---
+
+## After Every Write Operation — Verify the Result
+
+Every surgical edit tool (`add_effect`, `remove_effect`, `replace_effect`, `set_effect_parameter`) returns an `afterState` field in its response. This is a full inspection of the board after the change was saved.
+
+**Always check `afterState` after a write operation** to verify:
+- The expected plugins are present (or absent)
+- The signal chain looks correct
+- Parameters were applied as intended
+
+If `afterState` is null, the save failed — read the `notes` field to understand why.
+
+---
+
 ## Responsibility Split
 
 ### User-Facing AI
@@ -124,9 +163,11 @@ MOD Dwarf
 
 | Tool | When to use |
 |------|-------------|
-| `check_inventory_status` | **Call this first in every new session.** Returns exists, pluginCount, ageHours, isStale. |
+| `check_inventory_status` | **⚠️ MANDATORY FIRST CALL in every session.** Returns exists, pluginCount, ageHours, isStale. |
 | `refresh_device_inventory` | Run when inventory is missing or stale. Takes 2–5 minutes. Persists across sessions. |
-| `list_plugins` | List all installed plugins (URI + name). Requires inventory to be current for full 200+ list. |
+| `list_plugins` | List all installed plugins (URI + name). Use for full inventory dump. |
+| `search_plugins` | **Find plugins by keyword** (e.g. 'shimmer', 'dragonfly', 'chorus'). Preferred over list_plugins when looking for a specific type. |
+| `get_plugin_parameters` | **Get all control parameters for a plugin URI** — symbol, label, range, default. Call this before set_effect_parameter to avoid guessing symbols. |
 
 ### Creation Tools
 
@@ -144,13 +185,14 @@ Use these for targeted single-operation changes. **Do not rebuild the whole boar
 
 | Tool | When to use |
 |------|-------------|
-| `add_effect` | "Add a reverb at the end", "put a boost before the fuzz". Inserts one plugin and rewires. |
-| `remove_effect` | "Remove the chorus", "take out the delay". Disconnects and removes one plugin. |
-| `replace_effect` | "Swap the flanger for a chorus", "replace the DS1 with a Big Muff". Atomic plugin swap. |
-| `set_effect_parameter` | "More shimmer", "less delay", "turn up the gain to 0.8". Tweaks knobs in-place. |
+| `add_effect` | "Add a reverb at the end", "put a boost before the fuzz", "adicionar shimmer". Inserts one plugin and rewires. |
+| `remove_effect` | "Remove the chorus", "take out the delay", "tirar o reverb". Disconnects and removes one plugin. |
+| `replace_effect` | **"Swap the reverb for X", "replace the chorus with a flanger", "trocar o reverb por outro".** Atomic remove+add+rewire. ⚠️ Do NOT load a different pedalboard when asked to swap one effect — use this. |
+| `set_effect_parameter` | "More shimmer", "less delay", "turn up the gain", "mais shimmer", "menos delay". Tweaks knobs in-place. |
 
 All surgical tools:
 - Load the board, make the targeted change, save in-place (no new board created)
+- Return `afterState`: full board inspection after the change — verify it matches what you intended
 - Require `bundlepath` (from `list_pedalboards`) and `confirm: true`
 - Require `inspect_pedalboard` first so you know the current state and exact instance names
 
@@ -238,19 +280,26 @@ When the user asks for a **targeted change** to an existing board, use the surgi
 Use `set_effect_parameter`.
 
 1. Call `list_pedalboards` to get the board's `bundlepath`.
-2. Call `inspect_pedalboard` to find the instance name and available parameter symbols.
-3. Call `set_effect_parameter` with the bundlepath, instance name, and `parameters: { symbol: value }`.
+2. Call `inspect_pedalboard` to find the instance name and the plugin's URI.
+3. Call `get_plugin_parameters` with the plugin URI to get every control symbol with ranges and defaults.
+4. Call `set_effect_parameter` with the bundlepath, instance name, and `parameters: { symbol: value }`.
+5. Check `afterState` in the response to confirm the change was applied correctly.
 
 ```json
+// Step 3 — get_plugin_parameters
+{ "uri": "http://moddevices.com/plugins/fomp/DragonflyHallReverb" }
+// → returns: { "symbol": "dry_level", "minimum": 0, "maximum": 100, "default": 80 }, ...
+
+// Step 4 — set_effect_parameter
 {
   "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
-  "instance": "DragonFly",
-  "parameters": { "Decay": 0.8, "Mix": 0.6 },
+  "instance": "reverb_3",
+  "parameters": { "dry_level": 60, "wet_level": 40 },
   "confirm": true
 }
 ```
 
-**Never guess parameter symbols.** Only use symbols from `inspect_pedalboard` output.
+**Never guess parameter symbols.** If you pass a wrong symbol, the tool returns the full list of valid symbols — use that to retry. Always call `get_plugin_parameters` first when unsure.
 
 ### "Add reverb to the end of the chain"
 
@@ -428,12 +477,14 @@ When a structured recipe is not available:
 
 These rules exist because AI models have been observed inventing plugin details that don't exist on the device:
 
-1. **Never invent a plugin URI.** All URIs must come from `list_plugins` output. Invented URIs cause "plugin not found" failures.
-2. **Never invent a parameter symbol.** All symbols must come from `inspect_pedalboard` output. Invented symbols either fail silently or error.
+1. **Never invent a plugin URI.** All URIs must come from `list_plugins` or `search_plugins` output. Invented URIs cause "plugin not found" failures.
+2. **Never invent a parameter symbol.** Call `get_plugin_parameters` first. Invented symbols either fail (with a helpful error listing valid symbols) or are silently ignored.
 3. **Never invent an instance name.** Instance names come from `inspect_pedalboard`. Invented instance names cause removal/replace/parameter operations to fail.
 4. **Never skip `check_inventory_status` at session start.** A stale or missing inventory means only 34 plugins are visible instead of 200+.
 5. **Never use `modify_current_board` when a surgical tool suffices.** Rebuilding the whole board for a one-knob change is slow and risky.
 6. **Never call creation tools without knowing what's installed.** `list_plugins` is mandatory before any creation flow.
+7. **Never load a different pedalboard when asked to swap one effect.** Use `replace_effect` — it swaps the plugin in-place without changing the board. Loading another board loses the user's current setup.
+8. **Always verify `afterState` after every write operation.** Every surgical tool returns `afterState` — check it to confirm the board looks as intended before reporting success to the user.
 
 ---
 

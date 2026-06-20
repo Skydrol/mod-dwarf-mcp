@@ -26,6 +26,11 @@ import { RoleParameterProfileService } from "../dist/services/roleParameterProfi
 import { PedalboardSafetyService } from "../dist/services/pedalboardSafetyService.js";
 import { pluginCatalog } from "../dist/data/pluginCatalog.js";
 
+// NOTE: The live write tests (setEffectParameter, loadExistingPedalboard) may fail on repeated
+// runs because each setEffectParameter save accumulates duplicate connections in the MOD
+// firmware's live-graph-to-TTL serialization. This is a firmware behavior, not a code bug.
+// Reset the Pink Floyd board to a clean state if those tests start timing out.
+
 const SSH_CONFIG = { host: "192.168.51.1", port: 22, username: "root", password: "mod", timeoutMs: 10000 };
 const HTTP_CONFIG = { host: "192.168.51.1", port: 80, timeoutMs: 15000 };
 
@@ -156,6 +161,32 @@ await test("listSnapshots on found board", async () => {
   const snaps = await snapshotService.listSnapshots(testBundlePath);
   if (!Array.isArray(snaps.snapshots)) throw new Error("snapshots not array");
   return `${snaps.snapshots.length} snapshots, source=${snaps.sourceFile ?? "none"}`;
+});
+
+section("search_plugins");
+await test("search_plugins returns matches for 'reverb'", async () => {
+  const r = await pluginService.listPlugins("both");
+  const q = "reverb";
+  const matches = r.plugins.filter(p => (p.name?.toLowerCase().includes(q) ?? false) || (p.uri?.toLowerCase().includes(q) ?? false)).slice(0, 30);
+  if (matches.length === 0) throw new Error("no reverb plugins found");
+  return `${matches.length} reverb plugins found: ${matches.slice(0, 3).map(p => p.name).join(", ")}`;
+});
+await test("search_plugins returns matches for 'delay'", async () => {
+  const r = await pluginService.listPlugins("both");
+  const q = "delay";
+  const matches = r.plugins.filter(p => (p.name?.toLowerCase().includes(q) ?? false) || (p.uri?.toLowerCase().includes(q) ?? false)).slice(0, 30);
+  if (matches.length === 0) throw new Error("no delay plugins found");
+  return `${matches.length} delay plugins`;
+});
+
+section("get_plugin_parameters");
+await test("get_plugin_parameters for DS1 returns control inputs", async () => {
+  const ds1Uri = "http://moddevices.com/plugins/mod-devel/DS1";
+  const ports = await pluginService.getPluginPorts(ds1Uri);
+  if (!ports.controlInputs || ports.controlInputs.length === 0) throw new Error("no control inputs");
+  const sample = ports.controlInputs[0];
+  if (!sample.symbol) throw new Error("no symbol on first control input");
+  return `${ports.controlInputs.length} controls: ${ports.controlInputs.slice(0, 3).map(p => p.symbol).join(", ")}`;
 });
 
 section("plan_pedalboard_from_prompt");

@@ -13,6 +13,8 @@ import { addEffectTool } from "../tools/addEffect.js";
 import { removeEffectTool } from "../tools/removeEffect.js";
 import { replaceEffectTool } from "../tools/replaceEffect.js";
 import { setEffectParameterTool } from "../tools/setEffectParameter.js";
+import { getPluginParametersTool } from "../tools/getPluginParameters.js";
+import { searchPluginsTool } from "../tools/searchPlugins.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -126,7 +128,10 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Refresh device inventory",
       description:
-        "MANDATORY FIRST STEP before any pedalboard creation. Scans all LV2 plugins on the device and writes data/deviceInventory.json and data/pluginKnowledgeDb.json. After this runs, list_plugins returns the full device plugin list (200+) instead of the 34-entry fallback catalog. Takes 2–5 minutes on first run; result persists across sessions.",
+        "⚠️ RUN THIS BEFORE FIRST USE and whenever check_inventory_status returns exists=false or isStale=true. " +
+        "Scans all LV2 plugins on the device and writes data/pluginKnowledgeDb.json. " +
+        "After this runs, list_plugins returns 200+ real device plugins instead of the 34-entry fallback catalog. " +
+        "Takes 2–5 minutes on first run; result persists across sessions until firmware changes.",
       inputSchema: {}
     },
     async (input) => refreshDeviceInventoryTool(input, context)
@@ -159,7 +164,10 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     "list_plugins",
     {
       title: "List LV2 plugins",
-      description: "List installed LV2 plugin names, URIs, or both. Returns all 200+ device plugins when refresh_device_inventory has been run (reads from pluginKnowledgeDb.json). Falls back to the 34-entry hardcoded catalog if the knowledge DB is not yet generated.",
+      description:
+        "List all installed LV2 plugins (name + URI). Returns 200+ entries when inventory is current. " +
+        "Use format='both' to get URI+name pairs for recipe building. " +
+        "USE search_plugins instead when you want to find plugins by keyword (e.g. 'shimmer', 'reverb', 'delay').",
       inputSchema: {
         format: z.enum(["names", "uris", "both"]).default("both")
       }
@@ -404,10 +412,11 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Check plugin inventory status",
       description:
-        "Check whether the plugin knowledge database exists, how many plugins it contains, and how old it is. " +
-        "Call this FIRST in any new session before creating pedalboards. " +
-        "If exists=false or isStale=true, run refresh_device_inventory before proceeding. " +
-        "Returns: exists, pluginCount, generatedAt, ageHours, isStale, message.",
+        "⚠️ MANDATORY FIRST CALL in every session. Call this before anything else — before creating, modifying, or inspecting any pedalboard. " +
+        "Returns exists, pluginCount, ageHours, isStale, message. " +
+        "If exists=false → run refresh_device_inventory NOW (required before any other tool). " +
+        "If isStale=true → run refresh_device_inventory before creating or modifying boards. " +
+        "Without a current inventory, only 34 hardcoded plugins are visible instead of 200+.",
       inputSchema: {}
     },
     async (input) => checkInventoryStatusTool(input, context)
@@ -418,20 +427,19 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Add a single effect plugin to an existing pedalboard",
       description:
-        "Surgical insert: adds one plugin to a live pedalboard at the signal chain start or end, rewires connections, and saves in-place. " +
-        "Use this instead of rebuilding the entire board when the user says 'add reverb', 'put a boost before the fuzz', etc. " +
-        "Requires bundlepath (from list_pedalboards), pluginUri (from list_plugins), position ('first' or 'last'), and confirm=true. " +
-        "The plugin must be in the catalog or pluginKnowledgeDb — run check_inventory_status first.",
+        "Surgical insert: loads board, adds one plugin, rewires connections, saves in-place. Returns afterState with the updated plugin list and connections so you can verify the result. " +
+        "USE WHEN USER SAYS: 'add reverb', 'put a shimmer at the end', 'include a boost before the fuzz', 'adicionar reverb', 'colocar um chorus'. " +
+        "DO NOT rebuild the whole board for a single plugin addition — use this tool instead. " +
+        "Workflow: 1) search_plugins to find URI, 2) list_pedalboards to get bundlepath, 3) add_effect. " +
+        "Requires: bundlepath, pluginUri (from list_plugins/search_plugins), position ('first'|'last'), confirm=true.",
       inputSchema: {
         bundlepath: z.string().min(1),
-        pluginUri: z.string().min(1).describe("Exact LV2 URI — use list_plugins to get it."),
+        pluginUri: z.string().min(1).describe("Exact LV2 URI — use list_plugins or search_plugins."),
         instanceName: z
           .string()
           .min(1)
           .optional()
-          .describe(
-            "Instance name slug (e.g. 'MyReverb'). Derived from URI if omitted."
-          ),
+          .describe("Instance name slug (e.g. 'MyReverb'). Derived from URI if omitted."),
         position: z.enum(["first", "last"]).default("last"),
         confirm: z.boolean()
       }
@@ -444,16 +452,18 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Remove a single effect plugin from an existing pedalboard",
       description:
-        "Surgical remove: disconnects, removes, and optionally bypass-reconnects a plugin from a live pedalboard, then saves in-place. " +
-        "Use this when the user says 'remove the chorus', 'take out the tremolo', etc. " +
-        "Requires bundlepath, instance (from inspect_pedalboard), and confirm=true. " +
-        "Set reconnect=true (default) to wire the previous plugin directly to the next one, maintaining signal flow.",
+        "Surgical remove: disconnects, removes, bypass-reconnects, saves in-place. Returns afterState showing the board after removal. " +
+        "USE WHEN USER SAYS: 'remove the chorus', 'take out the delay', 'tirar o reverb', 'remover o tremolo', 'delete the distortion'. " +
+        "DO NOT use modify_current_board for a single plugin removal — use this tool. " +
+        "Workflow: 1) inspect_pedalboard to get exact instance name, 2) remove_effect. " +
+        "Requires: bundlepath, instance (exact name from inspect_pedalboard), confirm=true. " +
+        "reconnect=true (default) wires the previous plugin to the next, maintaining signal flow.",
       inputSchema: {
         bundlepath: z.string().min(1),
         instance: z
           .string()
           .min(1)
-          .describe("Instance name as seen in inspect_pedalboard (e.g. 'DS1', '/graph/DS1')."),
+          .describe("Instance name from inspect_pedalboard (e.g. 'DS1', '/graph/DS1')."),
         reconnect: z.boolean().default(true).describe("Wire prev→next on removal to maintain signal flow."),
         confirm: z.boolean()
       }
@@ -466,19 +476,22 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Replace one effect plugin with another",
       description:
-        "Surgical swap: removes a plugin, adds a replacement at the same position, rewires all connections, and saves in-place. " +
-        "Use when the user says 'replace the chorus with a flanger', 'swap the fuzz for a Big Muff', etc. " +
-        "Requires bundlepath, instanceToReplace (from inspect_pedalboard), newPluginUri (from list_plugins), and confirm=true.",
+        "Surgical swap: remove old plugin, add replacement at same position, rewire all connections, save in-place. Returns afterState with updated plugins and connections. " +
+        "USE WHEN USER SAYS: 'swap the reverb for X', 'replace the chorus with a flanger', 'trocar o reverb por outro', 'substituir o DS1 por um Big Muff', 'use X instead of Y', 'change the reverb to shimmer'. " +
+        "⚠️ DO NOT load a different pedalboard when asked to swap one effect — use THIS tool. " +
+        "⚠️ DO NOT use modify_current_board for a single plugin swap — use THIS tool. " +
+        "Workflow: 1) inspect_pedalboard to find instanceToReplace, 2) search_plugins for new URI, 3) replace_effect. " +
+        "Requires: bundlepath, instanceToReplace (from inspect_pedalboard), newPluginUri (from list_plugins/search_plugins), confirm=true.",
       inputSchema: {
         bundlepath: z.string().min(1),
         instanceToReplace: z
           .string()
           .min(1)
-          .describe("Instance to remove (e.g. 'DS1'). Use inspect_pedalboard to find names."),
+          .describe("Instance to remove (from inspect_pedalboard, e.g. 'reverb_3')."),
         newPluginUri: z
           .string()
           .min(1)
-          .describe("Exact LV2 URI of the replacement plugin — use list_plugins."),
+          .describe("Exact LV2 URI of the replacement — use list_plugins or search_plugins."),
         newInstanceName: z.string().min(1).optional().describe("Optional slug for the new instance."),
         confirm: z.boolean()
       }
@@ -491,23 +504,75 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Set parameter values on a plugin in an existing pedalboard",
       description:
-        "Surgical knob-tweak: sets one or more LV2 parameter values on a specific plugin instance and saves the board in-place. " +
-        "Use for 'more shimmer', 'less delay', 'turn up the gain', 'set decay to 0.8'. " +
-        "Parameter symbols must be exact LV2 symbols (inspect_pedalboard returns them). " +
-        "Requires bundlepath, instance, parameters (object mapping symbol→value), and confirm=true.",
+        "Surgical knob-tweak: validates symbols, sets LV2 parameter values on a plugin, saves in-place. Returns afterState so you can verify the change. " +
+        "USE WHEN USER SAYS: 'more shimmer', 'less delay', 'turn up the gain', 'set decay to 0.8', 'mais shimmer', 'menos delay', 'aumentar o reverb', 'adjust the mix'. " +
+        "⚠️ SYMBOL VALIDATION: If you use a wrong symbol name, the tool returns an error listing ALL valid symbols with ranges and defaults — use those to retry. " +
+        "⚠️ NEVER GUESS parameter symbols. Call get_plugin_parameters first if you are unsure what symbols the plugin exposes. " +
+        "Workflow: 1) inspect_pedalboard for instance name, 2) get_plugin_parameters for valid symbols, 3) set_effect_parameter. " +
+        "Requires: bundlepath, instance (from inspect_pedalboard), parameters ({ symbol: value }), confirm=true.",
       inputSchema: {
         bundlepath: z.string().min(1),
         instance: z
           .string()
           .min(1)
-          .describe("Instance name from inspect_pedalboard (e.g. 'BollieDelay')."),
+          .describe("Instance name from inspect_pedalboard (e.g. 'reverb_3')."),
         parameters: z
           .record(z.number())
-          .describe("LV2 symbol → numeric value, e.g. { \"Decay\": 0.8, \"Mix\": 0.6 }"),
+          .describe(
+            "LV2 symbol → numeric value, e.g. { \"dry_level\": 80, \"wet_level\": 40 }. " +
+              "Use get_plugin_parameters to find exact symbols for a plugin URI."
+          ),
         confirm: z.boolean()
       }
     },
     async (input) => setEffectParameterTool(input, context)
+  );
+
+  server.registerTool(
+    "get_plugin_parameters",
+    {
+      title: "Get all parameters of a plugin",
+      description:
+        "Returns every control input for a plugin: symbol, label, min, max, default, unit. " +
+        "USE THIS BEFORE set_effect_parameter to find the exact symbol names — never guess symbols. " +
+        "USE WHEN: you need to know what knobs a plugin has, what their valid ranges are, or what symbol to use in set_effect_parameter. " +
+        "Input: exact LV2 URI from list_plugins or search_plugins. " +
+        "Example: uri='http://moddevices.com/plugins/fomp/DragonflyHallReverb' → returns { symbol: 'dry_level', min: 0, max: 100, default: 80 } and all other controls.",
+      inputSchema: {
+        uri: z
+          .string()
+          .min(1)
+          .describe("Exact LV2 plugin URI from list_plugins or search_plugins.")
+      }
+    },
+    async (input) => getPluginParametersTool(input, context)
+  );
+
+  server.registerTool(
+    "search_plugins",
+    {
+      title: "Search installed plugins by keyword",
+      description:
+        "Find installed plugins matching a keyword in their name or URI. Case-insensitive. " +
+        "USE WHEN: you need to find a plugin by type or name before calling add_effect, replace_effect, or get_plugin_parameters. " +
+        "USE WHEN USER SAYS: 'something with shimmer', 'find a chorus', 'what reverbs are installed', 'procurar delay'. " +
+        "Returns matching plugin name + URI pairs. Use the URI in subsequent tool calls. " +
+        "Examples: query='shimmer', query='dragonfly', query='chorus', query='delay'.",
+      inputSchema: {
+        query: z
+          .string()
+          .min(1)
+          .describe("Keyword to search (case-insensitive). Matches name or URI."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(100)
+          .default(30)
+          .describe("Max results (default 30).")
+      }
+    },
+    async (input) => searchPluginsTool(input, context)
   );
 
   server.registerTool(

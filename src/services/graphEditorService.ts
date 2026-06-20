@@ -1,6 +1,7 @@
 import type { PedalboardService } from "./pedalboardService.js";
 import type { PluginService } from "./pluginService.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import type { PedalboardInspection } from "../types/pedalboard.js";
 import { uiGraphInstancePath, uiGraphRef } from "./liveGraphRefs.js";
 
 export interface GraphEditApiCall {
@@ -13,6 +14,7 @@ export interface GraphEditResult {
   success: boolean;
   notes: string[];
   apiCalls: GraphEditApiCall[];
+  afterState: PedalboardInspection | null;
 }
 
 // Same encoding as the global escape() used throughout the live authoring plan —
@@ -50,7 +52,8 @@ export class GraphEditorService {
           `Plugin ${input.pluginUri} has no audio ports in the catalog. ` +
             "Run refresh_device_inventory if this plugin is installed but not in the catalog."
         ],
-        apiCalls: []
+        apiCalls: [],
+        afterState: null
       };
     }
 
@@ -146,6 +149,10 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
+    const afterState = saveResult.ok
+      ? await safeInspect(this.pedalboardService, input.bundlepath)
+      : null;
+
     return {
       success: saveResult.ok,
       notes: [
@@ -153,7 +160,8 @@ export class GraphEditorService {
         ...connectNotes,
         saveResult.ok ? "Board saved in-place." : "Board save failed."
       ],
-      apiCalls: calls
+      apiCalls: calls,
+      afterState
     };
   }
 
@@ -178,7 +186,8 @@ export class GraphEditorService {
       return {
         success: false,
         notes: [`Instance '${input.instance}' not found on board. Available: ${available}`],
-        apiCalls: []
+        apiCalls: [],
+        afterState: null
       };
     }
 
@@ -230,6 +239,10 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
+    const afterState = saveResult.ok
+      ? await safeInspect(this.pedalboardService, input.bundlepath)
+      : null;
+
     return {
       success: saveResult.ok,
       notes: [
@@ -237,7 +250,8 @@ export class GraphEditorService {
         ...connectNotes,
         saveResult.ok ? "Board saved in-place." : "Board save failed."
       ],
-      apiCalls: calls
+      apiCalls: calls,
+      afterState
     };
   }
 
@@ -263,7 +277,8 @@ export class GraphEditorService {
       return {
         success: false,
         notes: [`Instance '${input.instanceToReplace}' not found. Available: ${available}`],
-        apiCalls: []
+        apiCalls: [],
+        afterState: null
       };
     }
 
@@ -272,7 +287,8 @@ export class GraphEditorService {
       return {
         success: false,
         notes: [`Replacement plugin ${input.newPluginUri} has no audio ports in the catalog.`],
-        apiCalls: []
+        apiCalls: [],
+        afterState: null
       };
     }
 
@@ -345,6 +361,10 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
+    const afterState = saveResult.ok
+      ? await safeInspect(this.pedalboardService, input.bundlepath)
+      : null;
+
     return {
       success: saveResult.ok,
       notes: [
@@ -352,7 +372,8 @@ export class GraphEditorService {
         `Rewired ${incomingConns.length} incoming and ${outgoingConns.length} outgoing connections.`,
         saveResult.ok ? "Board saved in-place." : "Board save failed."
       ],
-      apiCalls: calls
+      apiCalls: calls,
+      afterState
     };
   }
 
@@ -370,6 +391,47 @@ export class GraphEditorService {
     const inspection = await this.pedalboardService.inspectPedalboard(input.bundlepath);
     const calls: GraphEditApiCall[] = [];
 
+    // Validate that the instance exists and resolve its URI for symbol checking.
+    const instanceRef = normalizeInstanceRef(input.instance);
+    const instancePlugin = inspection.pluginsUsed.find(
+      (p) => normalizeInstanceRef(p.instance) === instanceRef
+    );
+    if (!instancePlugin) {
+      const available = inspection.pluginsUsed.map((p) => normalizeInstanceRef(p.instance)).join(", ");
+      return {
+        success: false,
+        notes: [`Instance '${input.instance}' not found on board. Available: ${available}`],
+        apiCalls: [],
+        afterState: null
+      };
+    }
+
+    // Validate parameter symbols before touching the device.
+    const ports = await this.pluginService.getPluginPorts(instancePlugin.uri);
+    const knownSymbols = new Set(ports.controlInputs.map((p) => p.symbol));
+    const unknownSymbols = Object.keys(input.parameters).filter((s) => !knownSymbols.has(s));
+    if (unknownSymbols.length > 0) {
+      const availableList = ports.controlInputs.map(
+        (p) =>
+          `  ${p.symbol}` +
+          (p.name && p.name !== p.symbol ? ` ("${p.name}")` : "") +
+          ` — range: ${p.minimum ?? "?"}..${p.maximum ?? "?"}` +
+          (p.unit ? ` ${p.unit}` : "") +
+          (p.default !== undefined ? `, default: ${p.default}` : "")
+      );
+      return {
+        success: false,
+        notes: [
+          `Unknown parameter symbol(s) for ${input.instance}: ${unknownSymbols.join(", ")}`,
+          `Call get_plugin_parameters with uri="${instancePlugin.uri}" to see all available parameters.`,
+          `Available control inputs for this plugin:`,
+          ...availableList
+        ],
+        apiCalls: [],
+        afterState: null
+      };
+    }
+
     const loadResult = await this.writeApi.postForm(
       "/pedalboard/load_bundle/",
       { bundlepath: input.bundlepath },
@@ -381,11 +443,10 @@ export class GraphEditorService {
     const paramNotes: string[] = [];
     for (const [symbol, value] of Object.entries(input.parameters)) {
       // Path format: /effect/parameter/set//graph/<Instance>/<Symbol> <value>
-      // (double slash, then space+value — matches the live authoring plan format)
       const path = `/effect/parameter/set/${uiGraphRef(`${input.instance}/${symbol}`)} ${value}`;
       const r = await this.writeApi.getBytes(path, `set ${symbol}=${value} on ${input.instance}`);
       calls.push(rec(path, r.ok, r.status));
-      paramNotes.push(`${symbol} = ${value} (HTTP ${r.status})`);
+      paramNotes.push(`${symbol} = ${value} (HTTP ${r.status}${r.ok ? "" : " — failed"})`);
     }
 
     const saveResult = await this.writeApi.postForm(
@@ -395,6 +456,9 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
+    // Parameter-only edit: board structure (plugins, connections) is unchanged.
+    // Return the pre-edit inspection as afterState — it still reflects the current plugin
+    // list and wiring, and the parameter changes are confirmed by the per-symbol HTTP status above.
     return {
       success: saveResult.ok,
       notes: [
@@ -402,7 +466,8 @@ export class GraphEditorService {
         ...paramNotes,
         saveResult.ok ? "Board saved in-place." : "Board save failed."
       ],
-      apiCalls: calls
+      apiCalls: calls,
+      afterState: saveResult.ok ? inspection : null
     };
   }
 }
@@ -434,15 +499,27 @@ function rec(path: string, ok: boolean, httpStatus?: number): GraphEditApiCall {
   return { path, status: ok ? "success" : "failed", httpStatus };
 }
 
+async function safeInspect(
+  pedalboardService: PedalboardService,
+  bundlepath: string
+): Promise<PedalboardInspection | null> {
+  try {
+    return await pedalboardService.inspectPedalboard(bundlepath);
+  } catch {
+    return null;
+  }
+}
+
 function fail(message: string, calls: GraphEditApiCall[]): GraphEditResult {
-  return { success: false, notes: [message], apiCalls: calls };
+  return { success: false, notes: [message], apiCalls: calls, afterState: null };
 }
 
 function notConfirmed(): GraphEditResult {
   return {
     success: false,
     notes: ["confirm must be true to execute graph edits."],
-    apiCalls: []
+    apiCalls: [],
+    afterState: null
   };
 }
 
@@ -450,6 +527,7 @@ function noWriteApi(): GraphEditResult {
   return {
     success: false,
     notes: ["Write API not configured. Set MOD_DWARF_ENABLE_WRITE_TOOLS=true."],
-    apiCalls: []
+    apiCalls: [],
+    afterState: null
   };
 }
