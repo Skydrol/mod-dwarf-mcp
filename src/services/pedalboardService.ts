@@ -87,8 +87,14 @@ export class PedalboardService {
     path: string,
     source: "user" | "factory"
   ): Promise<PedalboardSummary[]> {
-    const result = await this.ssh.exec(`find ${shellQuote(path)} -maxdepth 2 -print`);
-    const entries = result.stdout
+    // Run find and grep in parallel: 2 SSH connections instead of up to ~440 sequential ones.
+    // grep -r extracts every doap:name line from every TTL file in one shot.
+    const [findResult, grepResult] = await Promise.all([
+      this.ssh.exec(`find ${shellQuote(path)} -maxdepth 2 -print`),
+      this.ssh.exec(`grep -r 'doap:name' ${shellQuote(path)}`)
+    ]);
+
+    const entries = findResult.stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -98,20 +104,40 @@ export class PedalboardService {
       .filter((entry) => entry.split("/").length === path.split("/").length + 1)
       .sort();
 
-    const summaries: PedalboardSummary[] = [];
-    for (const bundlePath of bundles) {
-      const title = await this.resolvePedalboardTitle(bundlePath, entries);
-      summaries.push({
-        title,
-        bundlePath,
-        source,
-        hasManifest: entrySet.has(`${bundlePath}/manifest.ttl`),
-        hasSnapshots: entrySet.has(`${bundlePath}/snapshots.json`),
-        hasPresets: entrySet.has(`${bundlePath}/presets.json`),
-        hasAddressings: entrySet.has(`${bundlePath}/addressings.json`)
-      });
+    // Build bundlePath → title map from grep output.
+    // Lines look like: "/path/to/Board.pedalboard/Board.ttl:   doap:name "Title" ;"
+    // Prefer main TTL over manifest.ttl (main has the authoritative pedalboard title).
+    const manifestTitles = new Map<string, string>();
+    const mainTitles = new Map<string, string>();
+    for (const line of grepResult.stdout.split(/\r?\n/)) {
+      const colonIdx = line.indexOf(":");
+      if (colonIdx < 1) continue;
+      const filePath = line.substring(0, colonIdx).trim();
+      const content = line.substring(colonIdx + 1);
+      const nameMatch = content.match(/doap:name\s+"([^"]+)"/);
+      if (!nameMatch) continue;
+      const title = nameMatch[1];
+      const bundlePath = bundles.find((b) => filePath.startsWith(b + "/"));
+      if (!bundlePath) continue;
+      if (filePath.endsWith("/manifest.ttl")) {
+        if (!manifestTitles.has(bundlePath)) manifestTitles.set(bundlePath, title);
+      } else if (filePath.endsWith(".ttl")) {
+        if (!mainTitles.has(bundlePath)) mainTitles.set(bundlePath, title);
+      }
     }
-    return summaries;
+
+    return bundles.map((bundlePath) => ({
+      title:
+        mainTitles.get(bundlePath) ??
+        manifestTitles.get(bundlePath) ??
+        this.titleFromPath(bundlePath),
+      bundlePath,
+      source,
+      hasManifest: entrySet.has(`${bundlePath}/manifest.ttl`),
+      hasSnapshots: entrySet.has(`${bundlePath}/snapshots.json`),
+      hasPresets: entrySet.has(`${bundlePath}/presets.json`),
+      hasAddressings: entrySet.has(`${bundlePath}/addressings.json`)
+    }));
   }
 
   private async resolvePedalboardTitle(
