@@ -2,6 +2,8 @@
 
 This manual is for any AI agent using the MOD Dwarf MCP server.
 
+For the complete per-tool input/output reference, see [`TOOL_REFERENCE.md`](TOOL_REFERENCE.md).
+
 ---
 
 ## ⚠️ BEFORE ANYTHING ELSE — Inventory Required

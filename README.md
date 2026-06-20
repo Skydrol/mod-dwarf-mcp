@@ -140,6 +140,7 @@ When the caller already has a structured recipe:
 3. The tool reuses the existing execution flow and saves through the same HTTP path as other write tools.
 
 The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
+For per-tool input/output schemas, see [`docs/TOOL_REFERENCE.md`](docs/TOOL_REFERENCE.md).
 
 ## Features
 
