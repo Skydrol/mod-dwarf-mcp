@@ -26,6 +26,8 @@ import { PluginKnowledgeDbService } from "../services/pluginKnowledgeDbService.j
 import { RoleParameterProfileService } from "../services/roleParameterProfileService.js";
 import { PedalboardSafetyService } from "../services/pedalboardSafetyService.js";
 import { SnapshotService } from "../services/snapshotService.js";
+import { InventoryStatusService } from "../services/inventoryStatusService.js";
+import { GraphEditorService } from "../services/graphEditorService.js";
 import { registerTools } from "./toolRegistry.js";
 import type { ToolContext } from "../tools/toolContext.js";
 
@@ -95,7 +97,9 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     ),
     executePedalboardPlanService: undefined as unknown as ExecutePedalboardPlanService,
     effectRecipeToPedalboardPlanService:
-      undefined as unknown as EffectRecipeToPedalboardPlanService
+      undefined as unknown as EffectRecipeToPedalboardPlanService,
+    inventoryStatusService: new InventoryStatusService(),
+    graphEditorService: undefined as unknown as GraphEditorService
   };
 
   context.executePedalboardPlanService = new ExecutePedalboardPlanService(
@@ -112,6 +116,11 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
     new PluginKnowledgeDbService(),
     new RoleParameterProfileService(),
     new PedalboardSafetyService()
+  );
+  context.graphEditorService = new GraphEditorService(
+    context.pedalboardService,
+    context.pluginService,
+    deps.writeHttp ?? null
   );
 
   void deps.http;

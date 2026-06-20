@@ -8,6 +8,11 @@ import { createLiveGraphAuthoringPlanTool } from "../tools/createLiveGraphAuthor
 import { createPedalboardFromPromptTool } from "../tools/createPedalboardFromPrompt.js";
 import { createPedalboardFromRecipeTool } from "../tools/createPedalboardFromRecipe.js";
 import { modifyCurrentBoardTool } from "../tools/modifyCurrentBoard.js";
+import { checkInventoryStatusTool } from "../tools/checkInventoryStatus.js";
+import { addEffectTool } from "../tools/addEffect.js";
+import { removeEffectTool } from "../tools/removeEffect.js";
+import { replaceEffectTool } from "../tools/replaceEffect.js";
+import { setEffectParameterTool } from "../tools/setEffectParameter.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -29,6 +34,77 @@ import {
   liveGraphAuthoringPlanSchema,
   pedalboardPlanSchema
 } from "../schemas/tools.js";
+
+// Shared recipe effect schema — kept in one place so both create and modify tools stay in sync.
+const effectRecipeEffectSchema = z
+  .object({
+    role: z.string().min(1),
+    character: z.string().min(1),
+    intensity: z.enum(["subtle", "medium", "strong"]).optional(),
+    preferredPluginUri: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Exact LV2 URI of the plugin to use. This is the most reliable selection method — " +
+          "use list_plugins to get URIs. The MCP resolves by URI first before falling back to name or heuristics."
+      ),
+    preferredPluginName: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Human-readable name hint (e.g. 'Bollie Delay'). Used when preferredPluginUri is not provided."
+      ),
+    parameters: z
+      .record(z.number())
+      .optional()
+      .describe(
+        "Explicit parameter values by LV2 symbol (e.g. { gain: 0.8 }). " +
+          "Pinned to a single value, bypassing interpolation."
+      )
+  })
+  .strict();
+
+const effectRecipeSnapshotSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    effectFocus: z.record(z.unknown()),
+    parameterValues: z
+      .record(z.record(z.number()))
+      .optional()
+      .describe(
+        "Explicit parameter overrides per instance per snapshot, keyed as { instanceName: { symbol: value } }."
+      )
+  })
+  .strict();
+
+const effectRecipeSchema = z
+  .object({
+    song: z.string().min(1).optional(),
+    artist: z.string().min(1).optional(),
+    instrument: z.string().min(1),
+    operationMode: z.enum([
+      "new_board",
+      "replace_current_board",
+      "modify_current_board",
+      "parameter_only"
+    ]),
+    effects: z.array(effectRecipeEffectSchema).min(1),
+    snapshots: z.array(effectRecipeSnapshotSchema).default([]),
+    sections: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            snapshot: z.string().min(1)
+          })
+          .strict()
+      )
+      .default([])
+  })
+  .strict();
 
 export function registerTools(server: McpServer, context: ToolContext): void {
   server.registerTool(
@@ -294,51 +370,11 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Create a pedalboard from a structured recipe",
       description:
-        "Convert an explicit EffectRecipe into a pedalboard plan, then execute it through the existing end-to-end HTTP flow. Does not replace the planner or bypass confirm gating.",
+        "Convert an explicit EffectRecipe into a pedalboard plan, then execute it through the existing end-to-end HTTP flow. Does not replace the planner or bypass confirm gating. " +
+        "Effects support preferredPluginUri (most reliable — use list_plugins to get URIs), preferredPluginName (name hint), and parameters (explicit LV2 symbol→value map). " +
+        "Snapshots support parameterValues for per-snapshot overrides.",
       inputSchema: {
-        recipe: z.object({
-          song: z.string().min(1).optional(),
-          artist: z.string().min(1).optional(),
-          instrument: z.string().min(1),
-          operationMode: z.enum([
-            "new_board",
-            "replace_current_board",
-            "modify_current_board",
-            "parameter_only"
-          ]),
-          effects: z
-            .array(
-              z
-                .object({
-                  role: z.string().min(1),
-                  character: z.string().min(1),
-                  intensity: z.enum(["subtle", "medium", "strong"]).optional()
-                })
-                .strict()
-            )
-            .min(1),
-          snapshots: z
-            .array(
-              z
-                .object({
-                  name: z.string().min(1),
-                  description: z.string().min(1),
-                  effectFocus: z.record(z.unknown())
-                })
-                .strict()
-            )
-            .default([]),
-          sections: z
-            .array(
-              z
-                .object({
-                  name: z.string().min(1),
-                  snapshot: z.string().min(1)
-                })
-                .strict()
-            )
-            .default([])
-        }).strict(),
+        recipe: effectRecipeSchema,
         confirm: z.boolean(),
         title: z.string().min(1).optional()
       }
@@ -351,57 +387,127 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     {
       title: "Modify an existing pedalboard in-place",
       description:
-        "Write-gated in-place modifier. Loads the specified bundle, resets the live graph, applies the new recipe, and saves back to the same bundlepath (asNew=0). Use when the user wants to change effects or parameters on an existing pedalboard without creating a new one. Requires bundlepath (from list_pedalboards or inspect_pedalboard), an EffectRecipe describing the complete desired final state, and confirm=true.",
+        "Write-gated in-place modifier. Loads the specified bundle, resets the live graph, applies the new recipe, and saves back to the same bundlepath (asNew=0). Use when the user wants to change effects or parameters on an existing pedalboard without creating a new one. Requires bundlepath (from list_pedalboards or inspect_pedalboard), an EffectRecipe describing the complete desired final state, and confirm=true. " +
+        "For smaller changes (add one effect, tweak a knob, swap one plugin), prefer the surgical tools: add_effect, remove_effect, replace_effect, set_effect_parameter.",
       inputSchema: {
         bundlepath: z.string().min(1),
-        recipe: z.object({
-          song: z.string().min(1).optional(),
-          artist: z.string().min(1).optional(),
-          instrument: z.string().min(1),
-          operationMode: z.enum([
-            "new_board",
-            "replace_current_board",
-            "modify_current_board",
-            "parameter_only"
-          ]),
-          effects: z
-            .array(
-              z
-                .object({
-                  role: z.string().min(1),
-                  character: z.string().min(1),
-                  intensity: z.enum(["subtle", "medium", "strong"]).optional()
-                })
-                .strict()
-            )
-            .min(1),
-          snapshots: z
-            .array(
-              z
-                .object({
-                  name: z.string().min(1),
-                  description: z.string().min(1),
-                  effectFocus: z.record(z.unknown())
-                })
-                .strict()
-            )
-            .default([]),
-          sections: z
-            .array(
-              z
-                .object({
-                  name: z.string().min(1),
-                  snapshot: z.string().min(1)
-                })
-                .strict()
-            )
-            .default([])
-        }).strict(),
+        recipe: effectRecipeSchema,
         confirm: z.boolean(),
         title: z.string().min(1).optional()
       }
     },
     async (input) => modifyCurrentBoardTool(input, context)
+  );
+
+  server.registerTool(
+    "check_inventory_status",
+    {
+      title: "Check plugin inventory status",
+      description:
+        "Check whether the plugin knowledge database exists, how many plugins it contains, and how old it is. " +
+        "Call this FIRST in any new session before creating pedalboards. " +
+        "If exists=false or isStale=true, run refresh_device_inventory before proceeding. " +
+        "Returns: exists, pluginCount, generatedAt, ageHours, isStale, message.",
+      inputSchema: {}
+    },
+    async (input) => checkInventoryStatusTool(input, context)
+  );
+
+  server.registerTool(
+    "add_effect",
+    {
+      title: "Add a single effect plugin to an existing pedalboard",
+      description:
+        "Surgical insert: adds one plugin to a live pedalboard at the signal chain start or end, rewires connections, and saves in-place. " +
+        "Use this instead of rebuilding the entire board when the user says 'add reverb', 'put a boost before the fuzz', etc. " +
+        "Requires bundlepath (from list_pedalboards), pluginUri (from list_plugins), position ('first' or 'last'), and confirm=true. " +
+        "The plugin must be in the catalog or pluginKnowledgeDb — run check_inventory_status first.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        pluginUri: z.string().min(1).describe("Exact LV2 URI — use list_plugins to get it."),
+        instanceName: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Instance name slug (e.g. 'MyReverb'). Derived from URI if omitted."
+          ),
+        position: z.enum(["first", "last"]).default("last"),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => addEffectTool(input, context)
+  );
+
+  server.registerTool(
+    "remove_effect",
+    {
+      title: "Remove a single effect plugin from an existing pedalboard",
+      description:
+        "Surgical remove: disconnects, removes, and optionally bypass-reconnects a plugin from a live pedalboard, then saves in-place. " +
+        "Use this when the user says 'remove the chorus', 'take out the tremolo', etc. " +
+        "Requires bundlepath, instance (from inspect_pedalboard), and confirm=true. " +
+        "Set reconnect=true (default) to wire the previous plugin directly to the next one, maintaining signal flow.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        instance: z
+          .string()
+          .min(1)
+          .describe("Instance name as seen in inspect_pedalboard (e.g. 'DS1', '/graph/DS1')."),
+        reconnect: z.boolean().default(true).describe("Wire prev→next on removal to maintain signal flow."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => removeEffectTool(input, context)
+  );
+
+  server.registerTool(
+    "replace_effect",
+    {
+      title: "Replace one effect plugin with another",
+      description:
+        "Surgical swap: removes a plugin, adds a replacement at the same position, rewires all connections, and saves in-place. " +
+        "Use when the user says 'replace the chorus with a flanger', 'swap the fuzz for a Big Muff', etc. " +
+        "Requires bundlepath, instanceToReplace (from inspect_pedalboard), newPluginUri (from list_plugins), and confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        instanceToReplace: z
+          .string()
+          .min(1)
+          .describe("Instance to remove (e.g. 'DS1'). Use inspect_pedalboard to find names."),
+        newPluginUri: z
+          .string()
+          .min(1)
+          .describe("Exact LV2 URI of the replacement plugin — use list_plugins."),
+        newInstanceName: z.string().min(1).optional().describe("Optional slug for the new instance."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => replaceEffectTool(input, context)
+  );
+
+  server.registerTool(
+    "set_effect_parameter",
+    {
+      title: "Set parameter values on a plugin in an existing pedalboard",
+      description:
+        "Surgical knob-tweak: sets one or more LV2 parameter values on a specific plugin instance and saves the board in-place. " +
+        "Use for 'more shimmer', 'less delay', 'turn up the gain', 'set decay to 0.8'. " +
+        "Parameter symbols must be exact LV2 symbols (inspect_pedalboard returns them). " +
+        "Requires bundlepath, instance, parameters (object mapping symbol→value), and confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        instance: z
+          .string()
+          .min(1)
+          .describe("Instance name from inspect_pedalboard (e.g. 'BollieDelay')."),
+        parameters: z
+          .record(z.number())
+          .describe("LV2 symbol → numeric value, e.g. { \"Decay\": 0.8, \"Mix\": 0.6 }"),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => setEffectParameterTool(input, context)
   );
 
   server.registerTool(

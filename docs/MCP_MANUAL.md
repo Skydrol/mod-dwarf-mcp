@@ -12,11 +12,13 @@ The user-facing AI is the **primary musical decision maker**.
 
 Before requesting pedalboard execution, it must:
 
-1. Call `list_plugins` and read the device inventory (requires `refresh_device_inventory` to have been run at least once).
-2. **Research the tone online.** Search for what effects/pedals the referenced artist or song used. Do this before calling any MCP tool — the device has 200+ plugins and you need to know which ones match the requested style.
-3. Understand the user's musical intent.
-4. Select concrete plugins from the installed plugin list that best match the researched tone.
-5. Build a structured pedalboard recipe with explicit plugin names (not generic categories).
+1. Call `check_inventory_status` to verify the plugin database exists and is not stale.
+2. If `exists=false` or `isStale=true`, run `refresh_device_inventory` **before anything else**.
+3. Call `list_plugins` to get the full inventory (200+ plugins when inventory is current).
+4. **Research the tone online.** Search for what effects/pedals the referenced artist or song used. Do this before calling any MCP tool — the device has 200+ plugins and you need to know which ones match the requested style.
+5. Understand the user's musical intent.
+6. Select concrete plugins from the installed plugin list that best match the researched tone.
+7. Build a structured pedalboard recipe with explicit plugin names (not generic categories).
 
 The recipe must contain:
 
@@ -101,6 +103,7 @@ The MCP may provide fallback plugin selection only when:
 User
   ↓
 User-Facing AI
+  ↓  (check_inventory_status → refresh if needed)
   ↓  (researches online: song, artist, genre, tone)
   ↓  (reads device inventory via list_plugins)
   ↓  (crosses online findings against installed plugins)
@@ -115,35 +118,100 @@ MOD Dwarf
 
 ---
 
-## Preferred Entry Point
+## Tool Reference
+
+### Inventory Tools
 
 | Tool | When to use |
 |------|-------------|
-| `create_pedalboard_from_recipe` | **Preferred.** Caller has a structured recipe with explicit plugin names, roles, and snapshots. |
-| `modify_current_board` | **Preferred for modifications.** Caller wants to change effects or parameters on an existing board. Requires the board's bundlepath and a recipe describing the complete desired final state. |
+| `check_inventory_status` | **Call this first in every new session.** Returns exists, pluginCount, ageHours, isStale. |
+| `refresh_device_inventory` | Run when inventory is missing or stale. Takes 2–5 minutes. Persists across sessions. |
+| `list_plugins` | List all installed plugins (URI + name). Requires inventory to be current for full 200+ list. |
+
+### Creation Tools
+
+| Tool | When to use |
+|------|-------------|
+| `create_pedalboard_from_recipe` | **Preferred.** Structured recipe with explicit plugin names, roles, and snapshots. |
 | `create_pedalboard_from_prompt` | Fallback. Use when a full recipe is not available and the MCP must assist with planning. |
 | `execute_pedalboard_plan` | Lower-level. Use when the plan has already been fully built outside the MCP. |
-| `plan_pedalboard_from_prompt` | Dry-run inspection only. Use to preview the plan before execution. |
+| `plan_pedalboard_from_prompt` | Dry-run inspection only. Preview the plan before execution. |
 | `create_new_pedalboard` | Empty board only. No plugins. |
 
-The recipe-based flow is the primary architecture because it separates musical intelligence from device execution and keeps the MCP deterministic and testable.
+### Surgical Edit Tools (Incremental Changes)
+
+Use these for targeted single-operation changes. **Do not rebuild the whole board** when one of these suffices.
+
+| Tool | When to use |
+|------|-------------|
+| `add_effect` | "Add a reverb at the end", "put a boost before the fuzz". Inserts one plugin and rewires. |
+| `remove_effect` | "Remove the chorus", "take out the delay". Disconnects and removes one plugin. |
+| `replace_effect` | "Swap the flanger for a chorus", "replace the DS1 with a Big Muff". Atomic plugin swap. |
+| `set_effect_parameter` | "More shimmer", "less delay", "turn up the gain to 0.8". Tweaks knobs in-place. |
+
+All surgical tools:
+- Load the board, make the targeted change, save in-place (no new board created)
+- Require `bundlepath` (from `list_pedalboards`) and `confirm: true`
+- Require `inspect_pedalboard` first so you know the current state and exact instance names
+
+### Board-Level Modification Tools
+
+| Tool | When to use |
+|------|-------------|
+| `modify_current_board` | Replace the **entire** signal chain on an existing board. Use when more than one effect changes, or when you want to rebuild the chain. |
+| `inspect_pedalboard` | Read current plugins, connections, and snapshots from a board. Always call this before modifying. |
+| `list_pedalboards` | Find board bundlepaths. Required input for all modification tools. |
 
 ---
 
 ## Required Workflow
 
-### First Use
+### Step 1 — Check Inventory (Every Session)
 
-When connecting to a MOD Dwarf for the first time (or when `data/pluginKnowledgeDb.json` does not exist yet):
+**Always call `check_inventory_status` before creating pedalboards.**
+
+```json
+{ "exists": false, "pluginCount": 0, "isStale": true, "message": "Inventory not found..." }
+```
+
+If `exists=false` or `isStale=true`, run `refresh_device_inventory` before proceeding. Without inventory, only 34 hardcoded plugins are visible — the full 200+ device library is inaccessible.
+
+### Step 2 — Initialize Inventory (First Use Only)
 
 1. Call `get_device_info` to confirm the device is reachable.
-2. Call `refresh_device_inventory`. **This step is mandatory before any pedalboard creation.** It scans all 200+ LV2 plugins on the device and writes `data/pluginKnowledgeDb.json`, which is the source that `list_plugins` and the recipe converter use to match effects to real plugins. Without it, only 34 hardcoded catalog plugins are visible and non-catalog plugins will fail.
+2. Call `refresh_device_inventory`. **This step is mandatory before any pedalboard creation on a fresh install.** It scans all 200+ LV2 plugins on the device and writes `data/pluginKnowledgeDb.json`.
 3. Call `list_plugins` to confirm the full inventory is now accessible.
 4. Keep the discovered plugin list as your working reference for the rest of the session.
 
-Note: `refresh_device_inventory` takes 2–5 minutes on first run. Run it once; the result persists across sessions until a device firmware update changes the installed plugin set.
+Note: `refresh_device_inventory` takes 2–5 minutes on first run. The result persists across sessions until a device firmware update changes the installed plugin set.
 
-### Recipe-Driven Use (Preferred)
+### Step 3 — Research + Select Plugins
+
+1. **Research the reference tone.** Before building the recipe, search online for what effects/pedals/settings the artist or song actually used. Examples: "what gear did Slash use on November Rain?", "guitar tone for Smells Like Teen Spirit". If the user does not name a specific song, use your musical knowledge to suggest a plausible rig.
+2. **Read the device inventory.** Call `list_plugins` and cross your researched effect list against what is installed. Pick the closest available plugin for each role.
+3. **Never invent plugin URIs.** All URIs must come from `list_plugins` output. Invented URIs will fail.
+4. **Never invent parameter symbols.** All parameter symbols must come from `inspect_pedalboard` output. Invented symbols will be silently ignored or cause errors.
+
+### Step 4 — Execute
+
+Choose the right tool for the operation:
+
+**Creating a new board:**
+- Build an `EffectRecipe` with effects, explicit URIs, snapshots.
+- Call `create_pedalboard_from_recipe`.
+
+**Incremental change to existing board:**
+- Call `inspect_pedalboard` to get current state and instance names.
+- Use the appropriate surgical tool: `add_effect`, `remove_effect`, `replace_effect`, or `set_effect_parameter`.
+- These tools do NOT rebuild the whole board — they make the targeted change only.
+
+**Rebuilding the whole chain on an existing board:**
+- Build an `EffectRecipe` describing the **complete desired final state**.
+- Call `modify_current_board` with the board's `bundlepath`.
+
+---
+
+## Recipe-Driven Use (Preferred)
 
 1. **Research the reference tone.** Before building the recipe, search online for what effects/pedals/settings the artist or song actually used. Examples: "what gear did Slash use on November Rain?", "guitar tone for Smells Like Teen Spirit". If the user does not name a specific song, use your musical knowledge to suggest a plausible rig.
 2. **Read the device inventory.** Call `list_plugins` and cross your researched effect list against what is installed. Pick the closest available plugin for each role.
@@ -159,9 +227,86 @@ Note: `refresh_device_inventory` takes 2–5 minutes on first run. Run it once; 
 4. Call `create_pedalboard_from_recipe`.
 5. The MCP converts the recipe into a plan and delegates to the execution flow.
 
-### Modify an Existing Board
+---
 
-When the user wants to change the current board (different effects, different parameters, swap a plugin), use the modify flow instead of creating a new board.
+## Surgical Edits — Incremental Changes
+
+When the user asks for a **targeted change** to an existing board, use the surgical edit tools instead of rebuilding the entire board. These tools are faster, safer, and preserve unchanged plugins.
+
+### "More shimmer" / "Less delay" / "Turn up the reverb"
+
+Use `set_effect_parameter`.
+
+1. Call `list_pedalboards` to get the board's `bundlepath`.
+2. Call `inspect_pedalboard` to find the instance name and available parameter symbols.
+3. Call `set_effect_parameter` with the bundlepath, instance name, and `parameters: { symbol: value }`.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "instance": "DragonFly",
+  "parameters": { "Decay": 0.8, "Mix": 0.6 },
+  "confirm": true
+}
+```
+
+**Never guess parameter symbols.** Only use symbols from `inspect_pedalboard` output.
+
+### "Add reverb to the end of the chain"
+
+Use `add_effect`.
+
+1. Call `list_plugins` to get the plugin URI.
+2. Call `list_pedalboards` to get the bundlepath.
+3. Call `add_effect` with `position: "last"`.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "pluginUri": "urn:dragonfly:hall",
+  "position": "last",
+  "confirm": true
+}
+```
+
+### "Remove the chorus"
+
+Use `remove_effect`. Set `reconnect: true` (default) to preserve signal flow.
+
+1. Call `inspect_pedalboard` to find the instance name.
+2. Call `remove_effect`.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "instance": "TAP_ChorFlng",
+  "reconnect": true,
+  "confirm": true
+}
+```
+
+### "Swap the flanger for a chorus" / "Replace the DS1 with a Big Muff"
+
+Use `replace_effect`. Atomic remove + add + rewire.
+
+1. Call `inspect_pedalboard` to find the instance to replace.
+2. Call `list_plugins` to get the new plugin's URI.
+3. Call `replace_effect`.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "instanceToReplace": "TAP_ChorFlng",
+  "newPluginUri": "http://moddevices.com/plugins/mod-devel/BigMuff",
+  "confirm": true
+}
+```
+
+---
+
+## Modify an Existing Board (Full Rebuild)
+
+When the user wants to change **several effects or the whole chain** on an existing board (not just one targeted change), use `modify_current_board`.
 
 1. Call `list_pedalboards` to find the board the user is referring to and get its `bundlePath`.
 2. Call `inspect_pedalboard` with that `bundlePath` to see which plugins are currently installed, their signal chain, and existing snapshots.
@@ -181,9 +326,29 @@ Key constraints:
 - Use `inspect_pedalboard` to understand the current state before deciding what to change.
 - The board's bundlepath stays the same after modification — no duplicate is created in the library.
 
-### Parameter-Only Update
+**For smaller changes, use the surgical tools** (`add_effect`, `remove_effect`, `replace_effect`, `set_effect_parameter`) instead. They are faster and safer.
 
-When you only want to tweak parameter values on an existing board — without removing or re-adding any plugins — use `parameter_only` mode with `modify_current_board` tool and a `bundlePath`.
+---
+
+## Parameter-Only Update
+
+When you only want to tweak parameter values on an existing board — without removing or re-adding any plugins — you can either:
+
+1. Use `set_effect_parameter` (surgical, preferred for single-instance tweaks).
+2. Or use `modify_current_board` with `operationMode: "parameter_only"`.
+
+### Using `set_effect_parameter` (preferred for small tweaks)
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "instance": "BollieDelay",
+  "parameters": { "Time": 0.375, "Feedback": 0.45 },
+  "confirm": true
+}
+```
+
+### Using `modify_current_board` with `parameter_only` mode
 
 The MCP will:
 - Load the bundle (sets it as the active board)
@@ -235,7 +400,7 @@ Call: `modify_current_board({ bundlepath: "/root/.pedalboards/My_Song.pedalboard
 
 ---
 
-### Prompt-Driven Use (Fallback)
+## Prompt-Driven Use (Fallback)
 
 When a structured recipe is not available:
 
@@ -250,10 +415,25 @@ When a structured recipe is not available:
 
 ## Rules for Modifications
 
-- When the user asks to "change", "add", "remove", or "swap" an effect on an existing board, use `modify_current_board`, not `create_pedalboard_from_recipe`.
-- Always call `inspect_pedalboard` before modifying. Do not guess what is currently on the board.
-- Build the recipe with the **complete desired final state** — include every plugin that should be on the board after modification, not just the ones changing.
-- If the user asks to change only parameters (e.g., "make the reverb less wet"), still send the full plugin list. Sending only the changed plugin will remove everything else.
+- When the user asks to "change", "add", "remove", or "swap" **one effect**, use the surgical edit tools (`add_effect`, `remove_effect`, `replace_effect`), not `modify_current_board`.
+- When the user asks to change **several things at once** or "redo the whole board", use `modify_current_board`.
+- When the user says "more X" or "less X" or names a knob, use `set_effect_parameter`.
+- Always call `inspect_pedalboard` before modifying. Do not guess what is currently on the board or what the instance names are.
+- For `modify_current_board`, build the recipe with the **complete desired final state** — include every plugin that should be on the board after modification, not just the ones changing.
+- If the user asks to change only parameters (e.g., "make the reverb less wet"), use `set_effect_parameter` unless you want named snapshots to also update (in which case use `parameter_only` mode with `modify_current_board`).
+
+---
+
+## Anti-Improvisation Rules
+
+These rules exist because AI models have been observed inventing plugin details that don't exist on the device:
+
+1. **Never invent a plugin URI.** All URIs must come from `list_plugins` output. Invented URIs cause "plugin not found" failures.
+2. **Never invent a parameter symbol.** All symbols must come from `inspect_pedalboard` output. Invented symbols either fail silently or error.
+3. **Never invent an instance name.** Instance names come from `inspect_pedalboard`. Invented instance names cause removal/replace/parameter operations to fail.
+4. **Never skip `check_inventory_status` at session start.** A stale or missing inventory means only 34 plugins are visible instead of 200+.
+5. **Never use `modify_current_board` when a surgical tool suffices.** Rebuilding the whole board for a one-knob change is slow and risky.
+6. **Never call creation tools without knowing what's installed.** `list_plugins` is mandatory before any creation flow.
 
 ---
 
@@ -274,15 +454,51 @@ When a structured recipe is not available:
 ## Example: Smells Like Teen Spirit
 
 1. Translate the request to English if needed.
-2. Research the reference tone: Electro-Harmonix Small Clone chorus into a heavily distorted amp, clean verse / distorted chorus structure.
-3. Decide the target chain:
+2. Call `check_inventory_status`. If stale or missing, run `refresh_device_inventory`.
+3. Research the reference tone: Electro-Harmonix Small Clone chorus into a heavily distorted amp, clean verse / distorted chorus structure.
+4. Decide the target chain:
    - fuzz or distortion stage
    - chorus stage
    - output trim if needed
-4. Call `list_plugins`. Cross the chain against installed plugins:
+5. Call `list_plugins`. Cross the chain against installed plugins:
    - DS1 or Open Big Muff → distortion
    - TAP Chorus/Flanger → modulation
-5. Decide snapshots: Verse (clean, chorus on), Chorus (distorted, chorus on), Lead.
-6. Build a recipe with explicit plugin names and snapshot intent.
-7. Call `create_pedalboard_from_recipe`.
-8. Let the MCP validate, build, and save the board.
+6. Decide snapshots: Verse (clean, chorus on), Chorus (distorted, chorus on), Lead.
+7. Build a recipe with explicit plugin names and snapshot intent.
+8. Call `create_pedalboard_from_recipe`.
+9. Let the MCP validate, build, and save the board.
+
+---
+
+## Example: "More shimmer on the Shine On board"
+
+1. Call `list_pedalboards` → find `/root/.pedalboards/Pink_Floyd_Shine.pedalboard`.
+2. Call `inspect_pedalboard` → find instance name (e.g. `DragonFly`) and available parameter symbols (e.g. `Decay`, `Mix`, `Width`).
+3. Call `set_effect_parameter`:
+   ```json
+   {
+     "bundlepath": "/root/.pedalboards/Pink_Floyd_Shine.pedalboard",
+     "instance": "DragonFly",
+     "parameters": { "Decay": 0.9, "Mix": 0.75 },
+     "confirm": true
+   }
+   ```
+4. Done. The board is saved in-place.
+
+---
+
+## Example: "Replace the chorus with a flanger"
+
+1. Call `list_pedalboards` → get bundlepath.
+2. Call `inspect_pedalboard` → find chorus instance name (e.g. `TAP_ChorFlng`).
+3. Call `list_plugins` → find flanger URI.
+4. Call `replace_effect`:
+   ```json
+   {
+     "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+     "instanceToReplace": "TAP_ChorFlng",
+     "newPluginUri": "http://...",
+     "confirm": true
+   }
+   ```
+5. Done. The board is saved in-place with the flanger wired in the same position as the chorus.

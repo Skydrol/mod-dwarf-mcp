@@ -17,6 +17,8 @@ import type { PedalboardPlannerService } from "../services/pedalboardPlannerServ
 import type { SnapshotService } from "../services/snapshotService.js";
 import type { ExecutePedalboardPlanService } from "../services/executePedalboardPlanService.js";
 import type { EffectRecipeToPedalboardPlanService } from "../services/effectRecipeToPedalboardPlanService.js";
+import type { InventoryStatusService } from "../services/inventoryStatusService.js";
+import type { GraphEditorService } from "../services/graphEditorService.js";
 
 export interface ToolContext {
   deviceService: DeviceService;
@@ -38,6 +40,8 @@ export interface ToolContext {
   loadExistingPedalboardService: LoadExistingPedalboardService;
   executePedalboardPlanService: ExecutePedalboardPlanService;
   effectRecipeToPedalboardPlanService: EffectRecipeToPedalboardPlanService;
+  inventoryStatusService: InventoryStatusService;
+  graphEditorService: GraphEditorService;
 }
 
 export function jsonContent(value: unknown) {
