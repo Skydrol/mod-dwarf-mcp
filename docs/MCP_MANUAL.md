@@ -169,6 +169,16 @@ MOD Dwarf
 | `search_plugins` | **Find plugins by keyword** (e.g. 'shimmer', 'dragonfly', 'chorus'). Preferred over list_plugins when looking for a specific type. |
 | `get_plugin_parameters` | **Get all control parameters for a plugin URI** — symbol, label, range, default. Call this before set_effect_parameter to avoid guessing symbols. |
 
+### Board Discovery Tools
+
+| Tool | When to use |
+|------|-------------|
+| `get_current_board_state` | **"What's loaded right now?"** Returns the currently active board (plugins, connections, snapshots) without knowing the bundlepath. Call at the start of any modification session. May return `found=false` on some firmware — in that case use list_pedalboards. |
+| `list_pedalboards` | List all user and factory boards with bundlepaths. Required input for most tools. |
+| `inspect_pedalboard` | Full inspection of a specific board by bundlepath — plugins, connections, snapshots, mappings. Always call before modifying. |
+| `list_snapshots` | List named snapshots for a board. |
+| `list_banks` | List bank assignments. |
+
 ### Creation Tools
 
 | Tool | When to use |
@@ -178,6 +188,7 @@ MOD Dwarf
 | `execute_pedalboard_plan` | Lower-level. Use when the plan has already been fully built outside the MCP. |
 | `plan_pedalboard_from_prompt` | Dry-run inspection only. Preview the plan before execution. |
 | `create_new_pedalboard` | Empty board only. No plugins. |
+| `duplicate_pedalboard` | **Copy an existing board to a new title.** Use before any significant modification to preserve the original. |
 
 ### Surgical Edit Tools (Incremental Changes)
 
@@ -189,6 +200,8 @@ Use these for targeted single-operation changes. **Do not rebuild the whole boar
 | `remove_effect` | "Remove the chorus", "take out the delay", "tirar o reverb". Disconnects and removes one plugin. |
 | `replace_effect` | **"Swap the reverb for X", "replace the chorus with a flanger", "trocar o reverb por outro".** Atomic remove+add+rewire. ⚠️ Do NOT load a different pedalboard when asked to swap one effect — use this. |
 | `set_effect_parameter` | "More shimmer", "less delay", "turn up the gain", "mais shimmer", "menos delay". Tweaks knobs in-place. |
+| `toggle_effect_bypass` | **"Bypass the reverb", "disable the fuzz", "enable the chorus"**. Toggles bypass state live. Use `persist=true` to save to bundle. |
+| `activate_snapshot` | **"Switch to Solo", "go to the Clean preset", "ir para o snapshot Solo"**. Loads a named snapshot on the current board. |
 
 All surgical tools:
 - Load the board, make the targeted change, save in-place (no new board created)
@@ -201,6 +214,7 @@ All surgical tools:
 | Tool | When to use |
 |------|-------------|
 | `modify_current_board` | Replace the **entire** signal chain on an existing board. Use when more than one effect changes, or when you want to rebuild the chain. |
+| `duplicate_pedalboard` | Copy a board before modifying. Preserves plugins, connections, snapshots, and addressings. |
 | `inspect_pedalboard` | Read current plugins, connections, and snapshots from a board. Always call this before modifying. |
 | `list_pedalboards` | Find board bundlepaths. Required input for all modification tools. |
 
@@ -351,6 +365,65 @@ Use `replace_effect`. Atomic remove + add + rewire.
 }
 ```
 
+### "Bypass the reverb" / "Disable the chorus"
+
+Use `toggle_effect_bypass`.
+
+1. Call `inspect_pedalboard` to get the instance name.
+2. Call `toggle_effect_bypass` with `bypassed: true` to disable, `false` to enable.
+3. Use `persist: true` if the bypass state should survive the next board load.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "instance": "reverb_3",
+  "bypassed": true,
+  "persist": false,
+  "confirm": true
+}
+```
+
+`persist: false` (default) toggles the live graph only — it resets when the board is reloaded. Use `persist: true` to write the bypass state permanently to the bundle.
+
+### "Switch to the Solo snapshot" / "Go to the Clean preset"
+
+Use `activate_snapshot`.
+
+1. Call `list_snapshots` or `inspect_pedalboard` to see available snapshot names.
+2. Call `activate_snapshot` with the exact snapshot name.
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "snapshotName": "Solo",
+  "confirm": true
+}
+```
+
+Snapshot names are case-insensitive when matching (the tool normalizes both sides). If the name doesn't match, the tool returns all available snapshot names.
+
+### "Duplicate this board before I change it"
+
+Use `duplicate_pedalboard`.
+
+1. Call `list_pedalboards` to get the source bundlepath.
+2. Call `duplicate_pedalboard` with a new title.
+
+```json
+{
+  "sourceBundlePath": "/root/.pedalboards/Pink_Floyd_Shine.pedalboard",
+  "newTitle": "Pink Floyd Shine — Copy",
+  "confirm": true
+}
+```
+
+The duplicate is saved as a new user board, preserving all plugins, connections, parameters, snapshots, and addressings. The original is untouched.
+
+**Recommended flow for significant modifications:**
+1. `duplicate_pedalboard` → create backup copy
+2. Work on the copy (use surgical tools or `modify_current_board`)
+3. If satisfied, delete the backup manually via the MOD device UI
+
 ---
 
 ## Modify an Existing Board (Full Rebuild)
@@ -467,6 +540,9 @@ When a structured recipe is not available:
 - When the user asks to "change", "add", "remove", or "swap" **one effect**, use the surgical edit tools (`add_effect`, `remove_effect`, `replace_effect`), not `modify_current_board`.
 - When the user asks to change **several things at once** or "redo the whole board", use `modify_current_board`.
 - When the user says "more X" or "less X" or names a knob, use `set_effect_parameter`.
+- When the user says "bypass" or "disable" or "enable" an effect, use `toggle_effect_bypass` — do NOT remove and re-add the plugin.
+- When the user says "switch to X snapshot", use `activate_snapshot` — do NOT modify the board or reload it.
+- Before significant modifications, offer to `duplicate_pedalboard` as a safety backup.
 - Always call `inspect_pedalboard` before modifying. Do not guess what is currently on the board or what the instance names are.
 - For `modify_current_board`, build the recipe with the **complete desired final state** — include every plugin that should be on the board after modification, not just the ones changing.
 - If the user asks to change only parameters (e.g., "make the reverb less wet"), use `set_effect_parameter` unless you want named snapshots to also update (in which case use `parameter_only` mode with `modify_current_board`).
@@ -485,6 +561,8 @@ These rules exist because AI models have been observed inventing plugin details 
 6. **Never call creation tools without knowing what's installed.** `list_plugins` is mandatory before any creation flow.
 7. **Never load a different pedalboard when asked to swap one effect.** Use `replace_effect` — it swaps the plugin in-place without changing the board. Loading another board loses the user's current setup.
 8. **Always verify `afterState` after every write operation.** Every surgical tool returns `afterState` — check it to confirm the board looks as intended before reporting success to the user.
+9. **Never bypass an effect by rebuilding the board.** Use `toggle_effect_bypass` — it toggles bypass state in the live graph without touching the signal chain.
+10. **Duplicate before significant modifications.** Call `duplicate_pedalboard` to create a backup copy before using `modify_current_board` or a sequence of surgical edits. This is the safety net.
 
 ---
 

@@ -15,6 +15,10 @@ import { replaceEffectTool } from "../tools/replaceEffect.js";
 import { setEffectParameterTool } from "../tools/setEffectParameter.js";
 import { getPluginParametersTool } from "../tools/getPluginParameters.js";
 import { searchPluginsTool } from "../tools/searchPlugins.js";
+import { getCurrentBoardStateTool } from "../tools/getCurrentBoardState.js";
+import { toggleEffectBypassTool } from "../tools/toggleEffectBypass.js";
+import { activateSnapshotTool } from "../tools/activateSnapshot.js";
+import { duplicatePedalboardTool } from "../tools/duplicatePedalboard.js";
 import { runLiveGraphBuilderFromPromptTool } from "../tools/runLiveGraphBuilderFromPrompt.js";
 import { runLiveGraphBuilderDryRunOrApplyTool } from "../tools/runLiveGraphBuilderDryRunOrApply.js";
 import { runLiveGraphConnectionExperimentTool } from "../tools/runLiveGraphConnectionExperiment.js";
@@ -573,6 +577,93 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => searchPluginsTool(input, context)
+  );
+
+  server.registerTool(
+    "get_current_board_state",
+    {
+      title: "Get the currently loaded board state",
+      description:
+        "Returns the board currently loaded on the MOD Dwarf — plugins, connections, snapshots — without needing to know the bundlepath first. " +
+        "USE WHEN USER SAYS: 'what's loaded?', 'what board is active?', 'o que está carregado?', 'show me the current board'. " +
+        "Call this at the start of any modification session instead of listing all boards and guessing. " +
+        "If the device has no tracking file, returns found=false and suggests using list_pedalboards.",
+      inputSchema: {}
+    },
+    async (input) => getCurrentBoardStateTool(input, context)
+  );
+
+  server.registerTool(
+    "toggle_effect_bypass",
+    {
+      title: "Bypass or enable a plugin on an existing pedalboard",
+      description:
+        "Bypass (disable) or enable a plugin in the live graph. " +
+        "USE WHEN USER SAYS: 'bypass the reverb', 'disable the chorus', 'enable the fuzz', 'desativar o delay', 'ativar o reverb'. " +
+        "By default, bypass is live only (resets on next board load). Set persist=true to save the bypass state to the bundle permanently. " +
+        "Workflow: 1) inspect_pedalboard to find the instance name, 2) toggle_effect_bypass. " +
+        "Requires: bundlepath, instance (from inspect_pedalboard), bypassed (true=bypass, false=enable), confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        instance: z
+          .string()
+          .min(1)
+          .describe("Instance name from inspect_pedalboard (e.g. 'reverb_3')."),
+        bypassed: z.boolean().describe("true = bypass the effect, false = enable it."),
+        persist: z
+          .boolean()
+          .default(false)
+          .describe("Save bypass state to the bundle (persists after reload). Default false = live only."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => toggleEffectBypassTool(input, context)
+  );
+
+  server.registerTool(
+    "activate_snapshot",
+    {
+      title: "Activate a named snapshot on a pedalboard",
+      description:
+        "Load a named snapshot on the currently active board. Snapshots switch between preset configurations (e.g. Clean → Solo → Chorus). " +
+        "USE WHEN USER SAYS: 'switch to Solo', 'go to the chorus snapshot', 'activate Clean', 'ir para o snapshot Solo', 'mudar para o preset limpo'. " +
+        "Workflow: 1) list_snapshots or inspect_pedalboard to see snapshot names, 2) activate_snapshot. " +
+        "Requires: bundlepath, snapshotName (exact name from list_snapshots), confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        snapshotName: z
+          .string()
+          .min(1)
+          .describe("Exact snapshot name from list_snapshots (e.g. 'Solo', 'Clean', 'Verse')."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => activateSnapshotTool(input, context)
+  );
+
+  server.registerTool(
+    "duplicate_pedalboard",
+    {
+      title: "Duplicate a pedalboard as a new board",
+      description:
+        "Create a copy of an existing board under a new title. Preserves all plugins, connections, parameters, snapshots, and addressings. " +
+        "USE WHEN USER SAYS: 'make a copy of this board', 'duplicate before modifying', 'save a backup of X', 'criar cópia do pedalboard'. " +
+        "Recommended before any significant modification: duplicate first, then edit the copy. " +
+        "Workflow: 1) list_pedalboards to get sourceBundlePath, 2) duplicate_pedalboard with new title. " +
+        "Requires: sourceBundlePath, newTitle (different from original), confirm=true.",
+      inputSchema: {
+        sourceBundlePath: z
+          .string()
+          .min(1)
+          .describe("Bundle path of the board to copy (from list_pedalboards)."),
+        newTitle: z
+          .string()
+          .min(1)
+          .describe("Title for the duplicate. Must differ from the original."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => duplicatePedalboardTool(input, context)
   );
 
   server.registerTool(

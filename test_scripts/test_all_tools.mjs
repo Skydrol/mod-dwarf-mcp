@@ -1,6 +1,6 @@
 /**
- * Comprehensive test runner for all 31 MCP tools.
- * Tests read-only tools fully, and surgical edit tools on the Pink Floyd board.
+ * Comprehensive test runner for all 37 MCP tools.
+ * Tests read-only tools fully, guard checks for write tools, and live write tests on the Pink Floyd board.
  * Run: node test_scripts/test_all_tools.mjs
  */
 
@@ -354,6 +354,45 @@ await test("clear_current_pedalboard: write disabled → fails gracefully", asyn
   const clearService = new ClearCurrentPedalboardService(null, false);
   const r = await clearService.clear({ confirm: true });
   return r.notes?.[0] ?? "correctly blocked";
+});
+
+await test("toggle_effect_bypass: confirm=false → not-confirmed", async () => {
+  const r = await graphEditorNoWrite.toggleEffectBypass({
+    bundlepath: testBundlePath ?? "/nonexistent",
+    instance: "DS1",
+    bypassed: true,
+    persist: false,
+    confirm: false
+  });
+  if (r.success !== false) throw new Error("expected failure");
+  return r.notes[0];
+});
+
+await test("activate_snapshot: confirm=false → not-confirmed", async () => {
+  const r = await graphEditorNoWrite.activateSnapshot({
+    bundlepath: testBundlePath ?? "/nonexistent",
+    snapshotName: "Solo",
+    confirm: false
+  });
+  if (r.success !== false) throw new Error("expected failure");
+  return r.notes[0];
+});
+
+await test("duplicate_pedalboard: writeApi=null → fails gracefully", async () => {
+  const r = await graphEditorNoWrite.duplicateBoard({
+    sourceBundlePath: testBundlePath ?? "/nonexistent",
+    newTitle: "Copy",
+    confirm: true
+  });
+  if (r.success !== false) throw new Error("expected failure");
+  return r.notes[0];
+});
+
+section("get_current_board_state");
+await test("getCurrentBoardPath returns path or null gracefully", async () => {
+  const path = await pedalboardService.getCurrentBoardPath();
+  // May be null if device doesn't have the tracking file — that's OK
+  return path ? `current board: ${path.split("/").pop()}` : "no tracking file (expected on some firmware)";
 });
 
 // ─── LIVE WRITE TESTS on Pink Floyd board ────────────────────────────────────

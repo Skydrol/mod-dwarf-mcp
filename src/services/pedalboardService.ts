@@ -17,6 +17,14 @@ import { SnapshotService } from "./snapshotService.js";
 const USER_PEDALBOARDS = "/root/.pedalboards";
 const FACTORY_PEDALBOARDS = "/usr/share/mod/pedalboards";
 
+export interface BundleRawFiles {
+  manifestText: string | null;
+  mainTtlText: string | null;
+  mainTtlFileName: string | null;
+  snapshotsText: string | null;
+  addressingsText: string | null;
+}
+
 export class PedalboardService {
   private readonly snapshotService: SnapshotService;
 
@@ -174,6 +182,29 @@ export class PedalboardService {
         .filter(Boolean)
         .find((path) => !path.endsWith("/manifest.ttl")) ?? null
     );
+  }
+
+  async getCurrentBoardPath(): Promise<string | null> {
+    // MOD OS stores the last-loaded bundle path in this file.
+    const result = await readFile(this.ssh, "/root/data/last-pedalboard");
+    if (result && result.trim().length > 0) return result.trim();
+    // Fallback: try a symlink that some MOD firmware versions use.
+    const link = await this.ssh.exec("readlink /root/.pedalboards/current");
+    if (link.code === 0 && link.stdout.trim().length > 0) return link.stdout.trim();
+    return null;
+  }
+
+  async readBundleFiles(bundlePath: string): Promise<BundleRawFiles> {
+    const manifestText = await readFile(this.ssh, `${bundlePath}/manifest.ttl`);
+    const mainTtlFile = manifestText ? extractMainTtlFromManifest(manifestText) : null;
+    const mainTtlPath = mainTtlFile
+      ? `${bundlePath}/${mainTtlFile}`
+      : await this.findFirstTtl(bundlePath);
+    const mainTtlText = mainTtlPath ? await readFile(this.ssh, mainTtlPath) : null;
+    const mainTtlFileName = mainTtlPath ? (mainTtlPath.split("/").pop() ?? null) : null;
+    const snapshotsText = await readFile(this.ssh, `${bundlePath}/snapshots.json`);
+    const addressingsText = await readFile(this.ssh, `${bundlePath}/addressings.json`);
+    return { manifestText, mainTtlText, mainTtlFileName, snapshotsText, addressingsText };
   }
 
   async pedalboardTitleExists(

@@ -1,8 +1,12 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, basename } from "node:path";
 import type { PedalboardService } from "./pedalboardService.js";
 import type { PluginService } from "./pluginService.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
 import type { PedalboardInspection } from "../types/pedalboard.js";
 import { uiGraphInstancePath, uiGraphRef } from "./liveGraphRefs.js";
+import { makeTarGz } from "../utils/tarGz.js";
 
 export interface GraphEditApiCall {
   path: string;
@@ -15,6 +19,30 @@ export interface GraphEditResult {
   notes: string[];
   apiCalls: GraphEditApiCall[];
   afterState: PedalboardInspection | null;
+}
+
+export interface BypassResult {
+  success: boolean;
+  notes: string[];
+  instance: string;
+  bypassed: boolean;
+  persisted: boolean;
+  afterState: PedalboardInspection | null;
+}
+
+export interface SnapshotActivateResult {
+  success: boolean;
+  notes: string[];
+  snapshotName: string;
+  afterState: PedalboardInspection | null;
+}
+
+export interface DuplicateBoardResult {
+  success: boolean;
+  notes: string[];
+  newTitle?: string;
+  newBundlePath?: string;
+  apiCalls: GraphEditApiCall[];
 }
 
 // Same encoding as the global escape() used throughout the live authoring plan —
@@ -468,6 +496,220 @@ export class GraphEditorService {
       ],
       apiCalls: calls,
       afterState: saveResult.ok ? inspection : null
+    };
+  }
+
+  // ─── toggle_effect_bypass ────────────────────────────────────────────────────
+
+  async toggleEffectBypass(input: {
+    bundlepath: string;
+    instance: string;
+    bypassed: boolean;
+    persist: boolean;
+    confirm: boolean;
+  }): Promise<BypassResult> {
+    if (!input.confirm)
+      return { success: false, notes: ["confirm must be true to execute bypass toggle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+    if (!this.writeApi)
+      return { success: false, notes: ["Write API not configured. Set MOD_DWARF_ENABLE_WRITE_TOOLS=true."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+
+    const inspection = await this.pedalboardService.inspectPedalboard(input.bundlepath);
+    const instanceRef = normalizeInstanceRef(input.instance);
+    const exists = inspection.pluginsUsed.some(
+      (p) => normalizeInstanceRef(p.instance) === instanceRef
+    );
+    if (!exists) {
+      const available = inspection.pluginsUsed.map((p) => normalizeInstanceRef(p.instance)).join(", ");
+      return { success: false, notes: [`Instance '${input.instance}' not found. Available: ${available}`], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+    }
+
+    const calls: GraphEditApiCall[] = [];
+
+    const loadResult = await this.writeApi.postForm(
+      "/pedalboard/load_bundle/",
+      { bundlepath: input.bundlepath },
+      "load bundle for bypass toggle"
+    );
+    calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
+    if (!loadResult.ok) return { success: false, notes: ["Failed to load bundle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+
+    // MOD firmware bypass endpoint: /effect/bypass//graph/<instance> <true|false>
+    const bypassPath = `/effect/bypass/${uiGraphInstancePath(input.instance)} ${input.bypassed ? "true" : "false"}`;
+    const bypassResult = await this.writeApi.getBytes(bypassPath, `bypass ${input.instance}: ${input.bypassed}`);
+    calls.push(rec(bypassPath, bypassResult.ok, bypassResult.status));
+
+    let persisted = false;
+    if (input.persist && bypassResult.ok) {
+      const saveResult = await this.writeApi.postForm(
+        "/pedalboard/save",
+        { title: inspection.title ?? "Modified Board", asNew: 0 },
+        "persist bypass state"
+      );
+      calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
+      persisted = saveResult.ok;
+    }
+
+    const afterState = bypassResult.ok ? await safeInspect(this.pedalboardService, input.bundlepath) : null;
+
+    return {
+      success: bypassResult.ok,
+      notes: [
+        bypassResult.ok
+          ? `${input.instance} is now ${input.bypassed ? "bypassed" : "active"}.`
+          : `Bypass toggle failed (HTTP ${bypassResult.status}).`,
+        input.persist
+          ? persisted ? "Bypass state saved to bundle." : "Warning: bypass state NOT saved (save failed)."
+          : "Bypass is live only — call with persist=true to save to bundle."
+      ],
+      instance: input.instance,
+      bypassed: input.bypassed,
+      persisted,
+      afterState
+    };
+  }
+
+  // ─── activate_snapshot ───────────────────────────────────────────────────────
+
+  async activateSnapshot(input: {
+    bundlepath: string;
+    snapshotName: string;
+    confirm: boolean;
+  }): Promise<SnapshotActivateResult> {
+    if (!input.confirm)
+      return { success: false, notes: ["confirm must be true to activate a snapshot."], snapshotName: input.snapshotName, afterState: null };
+    if (!this.writeApi)
+      return { success: false, notes: ["Write API not configured."], snapshotName: input.snapshotName, afterState: null };
+
+    const inspection = await this.pedalboardService.inspectPedalboard(input.bundlepath);
+    const snapshot = inspection.snapshots.find(
+      (s) => s.name.toLowerCase() === input.snapshotName.toLowerCase()
+    );
+    if (!snapshot) {
+      const available = inspection.snapshots.map((s) => s.name).join(", ");
+      return { success: false, notes: [`Snapshot '${input.snapshotName}' not found. Available: ${available || "(none)"}`], snapshotName: input.snapshotName, afterState: null };
+    }
+
+    const loadResult = await this.writeApi.postForm(
+      "/pedalboard/load_bundle/",
+      { bundlepath: input.bundlepath },
+      "load bundle for snapshot activation"
+    );
+    if (!loadResult.ok)
+      return { success: false, notes: ["Failed to load bundle."], snapshotName: input.snapshotName, afterState: null };
+
+    // MOD firmware snapshot endpoint. The name is URL-encoded.
+    const encoded = encodeURIComponent(snapshot.name);
+    const snapPath = `/snapshot/load?name=${encoded}`;
+    const snapResult = await this.writeApi.getBytes(snapPath, `activate snapshot "${snapshot.name}"`);
+
+    const afterState = snapResult.ok ? inspection : null;
+
+    return {
+      success: snapResult.ok,
+      notes: [
+        snapResult.ok
+          ? `Snapshot "${snapshot.name}" activated.`
+          : `Snapshot activation failed (HTTP ${snapResult.status}). The endpoint /snapshot/load?name=<name> may differ on this firmware — check the device documentation.`
+      ],
+      snapshotName: snapshot.name,
+      afterState
+    };
+  }
+
+  // ─── duplicate_board ─────────────────────────────────────────────────────────
+
+  async duplicateBoard(input: {
+    sourceBundlePath: string;
+    newTitle: string;
+    confirm: boolean;
+  }): Promise<DuplicateBoardResult> {
+    if (!input.confirm)
+      return { success: false, notes: ["confirm must be true to duplicate a board."], apiCalls: [] };
+    if (!this.writeApi)
+      return { success: false, notes: ["Write API not configured."], apiCalls: [] };
+
+    const rawFiles = await this.pedalboardService.readBundleFiles(input.sourceBundlePath);
+    if (!rawFiles.manifestText || !rawFiles.mainTtlText) {
+      return { success: false, notes: ["Could not read source bundle files."], apiCalls: [] };
+    }
+
+    // Replace title in both TTL files.
+    const escapedTitle = input.newTitle.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const newManifest = rawFiles.manifestText.replace(
+      /doap:name\s+"[^"]*"/,
+      `doap:name "${escapedTitle}"`
+    );
+    const newMainTtl = rawFiles.mainTtlText.replace(
+      /doap:name\s+"[^"]*"/,
+      `doap:name "${escapedTitle}"`
+    );
+
+    // Build new bundle folder name from title slug.
+    const slug = input.newTitle
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "pedalboard";
+    const newFolderName = `${slug}.pedalboard`;
+    const mainTtlFileName = rawFiles.mainTtlFileName ?? `${slug}.ttl`;
+
+    // Write to local temp dir and package as tar.gz.
+    const tempDir = join(tmpdir(), `mod-dwarf-mcp-dup-${Date.now()}`);
+    await mkdir(join(tempDir, newFolderName), { recursive: true });
+
+    const tarFiles: Array<{ name: string; data: Buffer }> = [
+      { name: `${newFolderName}/manifest.ttl`, data: Buffer.from(newManifest, "utf8") },
+      { name: `${newFolderName}/${mainTtlFileName}`, data: Buffer.from(newMainTtl, "utf8") }
+    ];
+    if (rawFiles.snapshotsText) {
+      tarFiles.push({ name: `${newFolderName}/snapshots.json`, data: Buffer.from(rawFiles.snapshotsText, "utf8") });
+    }
+    if (rawFiles.addressingsText) {
+      tarFiles.push({ name: `${newFolderName}/addressings.json`, data: Buffer.from(rawFiles.addressingsText, "utf8") });
+    }
+
+    const archivePath = join(tempDir, `${newFolderName}.tar.gz`);
+    await writeFile(archivePath, makeTarGz(tarFiles));
+
+    const calls: GraphEditApiCall[] = [];
+
+    const importResult = await this.writeApi.postRawFile(
+      "/pedalboard/load_web/",
+      archivePath,
+      "import duplicated bundle"
+    );
+    calls.push(rec("/pedalboard/load_web/", importResult.ok, importResult.status));
+    if (!importResult.ok)
+      return { success: false, notes: [`Import failed: HTTP ${importResult.status}`], apiCalls: calls };
+
+    // Activate the imported bundle from /tmp.
+    const tmpBundlePath = `/tmp/pedalboards/${newFolderName}`;
+    const loadResult = await this.writeApi.postForm(
+      "/pedalboard/load_bundle/",
+      { bundlepath: tmpBundlePath },
+      "activate imported duplicate"
+    );
+    calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
+    if (!loadResult.ok)
+      return { success: false, notes: ["Duplicate imported but failed to activate."], apiCalls: calls };
+
+    // Save as new permanent board.
+    const saveResult = await this.writeApi.postForm(
+      "/pedalboard/save",
+      { title: input.newTitle, asNew: 1 },
+      "save duplicate as new board"
+    );
+    calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
+
+    const newBundlePath = `/root/.pedalboards/${newFolderName}`;
+    return {
+      success: saveResult.ok,
+      notes: saveResult.ok
+        ? [`Board duplicated as "${input.newTitle}".`, `New bundle: ${newBundlePath}`]
+        : ["Duplicate activated but final save failed."],
+      newTitle: saveResult.ok ? input.newTitle : undefined,
+      newBundlePath: saveResult.ok ? newBundlePath : undefined,
+      apiCalls: calls
     };
   }
 }
