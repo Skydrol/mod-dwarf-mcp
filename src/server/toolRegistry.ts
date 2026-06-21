@@ -117,7 +117,17 @@ const effectRecipeSchema = z
   .strict();
 
 export function registerTools(server: McpServer, context: ToolContext): void {
-  server.registerTool(
+  const registerTool: McpServer["registerTool"] = ((name: any, definition: any, handler: any) => {
+    const normalizedName = name.replace(/_/g, " ");
+    const prefix = `MOD Dwarf MCP tool: ${normalizedName} (${name}). `;
+    const description = definition.description
+      ? `${prefix}${definition.description}`
+      : prefix.trimEnd();
+
+    return server.registerTool(name, { ...definition, description }, handler);
+  }) as McpServer["registerTool"];
+
+  registerTool(
     "create_new_pedalboard",
     {
       title: "Create a new empty pedalboard",
@@ -131,7 +141,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => createNewPedalboardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "refresh_device_inventory",
     {
       title: "Refresh device inventory",
@@ -145,7 +155,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => refreshDeviceInventoryTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "clear_current_pedalboard",
     {
       title: "Clear the currently loaded pedalboard",
@@ -158,7 +168,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => clearCurrentPedalboardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "get_device_info",
     {
       title: "Get MOD Dwarf device info",
@@ -168,7 +178,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => getDeviceInfoTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "list_plugins",
     {
       title: "List LV2 plugins",
@@ -183,7 +193,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => listPluginsTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "list_pedalboards",
     {
       title: "List pedalboards",
@@ -195,7 +205,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => listPedalboardsTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "inspect_pedalboard",
     {
       title: "Inspect a pedalboard",
@@ -208,7 +218,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => inspectPedalboardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "list_banks",
     {
       title: "List banks",
@@ -220,7 +230,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => listBanksTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "list_snapshots",
     {
       title: "List snapshots",
@@ -232,7 +242,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => listSnapshotsTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "plan_pedalboard_from_prompt",
     {
       title: "Plan a MOD Dwarf pedalboard from a prompt",
@@ -248,7 +258,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => planPedalboardFromPromptTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "import_pedalboard_dry_bundle",
     {
       title: "Import a generated dry-run pedalboard bundle",
@@ -263,7 +273,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => importPedalboardDryBundleTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "save_loaded_pedalboard_as_new",
     {
       title: "Save the loaded pedalboard as a new user pedalboard",
@@ -279,7 +289,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => saveLoadedPedalboardAsNewTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "load_existing_pedalboard",
     {
       title: "Load an existing saved pedalboard",
@@ -293,7 +303,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => loadExistingPedalboardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "create_pedalboard_dry_bundle",
     {
       title: "Create a local dry-run pedalboard bundle",
@@ -306,7 +316,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => createPedalboardDryBundleTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "create_live_graph_authoring_plan",
     {
       title: "Plan live MOD UI graph authoring calls",
@@ -319,7 +329,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => createLiveGraphAuthoringPlanTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "run_live_graph_builder_dry_run_or_apply",
     {
       title: "Dry-run or temporarily apply a live graph plan",
@@ -335,7 +345,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => runLiveGraphBuilderDryRunOrApplyTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "run_live_graph_builder_from_prompt",
     {
       title: "Dry-run or temporarily apply a live graph plan from a prompt",
@@ -351,7 +361,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => runLiveGraphBuilderFromPromptTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "execute_pedalboard_plan",
     {
       title: "Execute a pedalboard plan end-to-end",
@@ -366,7 +376,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => executePedalboardPlanTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "create_pedalboard_from_prompt",
     {
       title: "Create a pedalboard from a prompt",
@@ -381,7 +391,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => createPedalboardFromPromptTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "create_pedalboard_from_recipe",
     {
       title: "Create a pedalboard from a structured recipe",
@@ -398,7 +408,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => createPedalboardFromRecipeTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "modify_current_board",
     {
       title: "Modify an existing pedalboard in-place",
@@ -415,7 +425,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => modifyCurrentBoardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "check_inventory_status",
     {
       title: "Check plugin inventory status",
@@ -430,7 +440,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => checkInventoryStatusTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "add_effect",
     {
       title: "Add a single effect plugin to an existing pedalboard",
@@ -460,7 +470,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => addEffectTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "remove_effect",
     {
       title: "Remove a single effect plugin from an existing pedalboard",
@@ -484,7 +494,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => removeEffectTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "replace_effect",
     {
       title: "Replace one effect plugin with another",
@@ -512,7 +522,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => replaceEffectTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "set_effect_parameter",
     {
       title: "Set parameter values on a plugin in an existing pedalboard",
@@ -541,7 +551,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => setEffectParameterTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "get_plugin_parameters",
     {
       title: "Get all parameters of a plugin",
@@ -561,7 +571,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => getPluginParametersTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "search_plugins",
     {
       title: "Search installed plugins by keyword",
@@ -588,7 +598,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => searchPluginsTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "get_current_board_state",
     {
       title: "Get the currently loaded board state",
@@ -602,7 +612,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => getCurrentBoardStateTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "toggle_effect_bypass",
     {
       title: "Bypass or enable a plugin on an existing pedalboard",
@@ -629,7 +639,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => toggleEffectBypassTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "activate_snapshot",
     {
       title: "Activate a named snapshot on a pedalboard",
@@ -650,7 +660,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => activateSnapshotTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "duplicate_pedalboard",
     {
       title: "Duplicate a pedalboard as a new board",
@@ -675,7 +685,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => duplicatePedalboardTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "run_live_graph_experiment",
     {
       title: "Run a live TinyGain Mono authoring experiment",
@@ -688,7 +698,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => runLiveGraphExperimentTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "run_live_graph_connection_experiment",
     {
       title: "Run a live two-plugin connection experiment",
@@ -701,7 +711,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => runLiveGraphConnectionExperimentTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "validate_current_board_audio_path",
     {
       title: "Validate the audio signal path of a pedalboard",
@@ -718,7 +728,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => validateAudioPathTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "remove_orphan_effects",
     {
       title: "Remove orphan (disconnected) plugins from a pedalboard",
@@ -734,7 +744,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => removeOrphanEffectsTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "check_bypass_support",
     {
       title: "Check if the HTTP bypass endpoint is supported on this firmware",
@@ -748,7 +758,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
     async (input) => checkBypassSupportTool(input, context)
   );
 
-  server.registerTool(
+  registerTool(
     "cleanup_snapshot_references",
     {
       title: "Remove references to a deleted plugin from snapshots.json",

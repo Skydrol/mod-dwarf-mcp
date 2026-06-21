@@ -42,7 +42,7 @@ export interface ServerDependencies {
 export function createMcpServer(deps: ServerDependencies): McpServer {
   const server = new McpServer({
     name: "mod-dwarf-mcp",
-    version: "0.1.0"
+    version: "0.1.1"
   });
 
   const pluginService = new PluginService(deps.ssh, pluginCatalog);

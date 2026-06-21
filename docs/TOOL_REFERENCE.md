@@ -1,6 +1,6 @@
 # MOD Dwarf MCP — Tool Reference
 
-All 34 tools, documented with inputs, outputs, and usage notes.
+All 38 tools, documented with inputs, outputs, and usage notes.
 
 **Write-gated tools** require `MOD_DWARF_ENABLE_WRITE_TOOLS=true` in the environment **and** `confirm: true` in the call. Passing `confirm: false` returns the validation result without executing.
 
