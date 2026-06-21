@@ -141,6 +141,7 @@ When the caller already has a structured recipe:
 
 The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
 For per-tool input/output schemas, see [`docs/TOOL_REFERENCE.md`](docs/TOOL_REFERENCE.md).
+If the Codex tool list looks truncated or stale, see [`docs/TROUBLESHOOTING_MCP_DISCOVERY.md`](docs/TROUBLESHOOTING_MCP_DISCOVERY.md).
 
 ## Features
 
