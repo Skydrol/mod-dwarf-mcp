@@ -1,15 +1,35 @@
 import type { PluginPort } from "../types/plugin.js";
 
+export type PluginCategory =
+  | "boost"
+  | "overdrive"
+  | "distortion"
+  | "fuzz"
+  | "amp_modeler"
+  | "cabinet"
+  | "amp_and_cab_modeler"
+  | "modulation"
+  | "delay"
+  | "reverb"
+  | "utility"
+  | "gain";
+
 export interface PluginCatalogEntry {
   uri: string;
   name: string;
   ports: PluginPort[];
+  category?: PluginCategory;
+  requiresExternalModel?: boolean;
+  preferredUseCases?: string[];
+  avoidForRoles?: string[];
 }
 
 export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://gareus.org/oss/lv2/tinygain#mono",
     name: "TinyGain Mono",
+    category: "gain",
+    preferredUseCases: ["input gain", "output level", "signal trim"],
     ports: [
       {
         index: 0,
@@ -101,6 +121,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://gareus.org/oss/lv2/tinygain#stereo",
     name: "TinyGain Stereo",
+    category: "gain",
+    preferredUseCases: ["stereo input gain", "stereo output level", "stereo trim"],
     ports: [
       {
         index: 0,
@@ -213,6 +235,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/Gain",
     name: "Gain",
+    category: "gain",
+    preferredUseCases: ["input gain", "output level", "signal trim"],
     ports: [
       {
         index: 0,
@@ -255,6 +279,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/Gain2x2",
     name: "Gain 2x2",
+    category: "gain",
+    preferredUseCases: ["input gain", "output level", "signal trim"],
     ports: [
       {
         index: 0,
@@ -318,6 +344,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/tap/chorusflanger",
     name: "TAP Chorus/Flanger",
+    category: "modulation",
+    preferredUseCases: ["chorus", "flanger", "modulation"],
     ports: [
       {
         index: 0,
@@ -477,6 +505,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://ca9.eu/lv2/bolliedelay",
     name: "Bollie Delay",
+    category: "delay",
+    preferredUseCases: ["delay", "echo", "rhythmic delay"],
     ports: [
       {
         index: 0,
@@ -797,6 +827,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/michaelwillis/dragonfly-reverb",
     name: "Dragonfly Hall Reverb",
+    category: "reverb",
+    preferredUseCases: ["hall reverb", "large space", "ambient", "concert hall"],
     ports: [
       {
         index: 0,
@@ -1136,6 +1168,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://distrho.sf.net/plugins/MVerb",
     name: "MVerb",
+    category: "reverb",
+    preferredUseCases: ["reverb", "room", "hall", "ambient"],
     ports: [
       {
         index: 0,
@@ -1319,6 +1353,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/cabsim-vintage",
     name: "Vintage Cabinets",
+    category: "cabinet",
+    preferredUseCases: ["cabinet simulation", "speaker simulation", "amp cabinet"],
     ports: [
       {
         index: 0,
@@ -1419,6 +1455,10 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://aidadsp.cc/plugins/aidadsp-bundle/rt-neural-generic",
     name: "AIDA-X",
+    category: "amp_and_cab_modeler",
+    requiresExternalModel: true,
+    preferredUseCases: ["amp simulation", "cabinet simulation", "neural amp captures", "amp and cab modeling"],
+    avoidForRoles: ["distortion", "overdrive", "fuzz", "boost"],
     ports: [
       {
         index: 0,
@@ -1810,6 +1850,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
 {
     uri: "http://moddevices.com/plugins/mod-devel/DS1",
     name: "DS1",
+    category: "distortion",
+    preferredUseCases: ["distortion", "hard clipping", "punk", "metal", "rock"],
     ports: [
       {
         index: 0,
@@ -1876,6 +1918,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://guitarix.sourceforge.net/plugins/gx_sd1sim_#_sd1sim_",
     name: "GxSD1",
+    category: "overdrive",
+    preferredUseCases: ["overdrive", "blues", "rock", "mild clipping"],
     ports: [
       {
         index: 0,
@@ -1954,6 +1998,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://guitarix.sourceforge.net/plugins/gxts9#ts9sim",
     name: "GxTubeScreamer",
+    category: "overdrive",
+    preferredUseCases: ["overdrive", "blues", "rock", "mild saturation", "boost into amp"],
     ports: [
       {
         index: 0,
@@ -2020,6 +2066,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/jatinchowdhury18/KlonCentaur",
     name: "ChowCentaur",
+    category: "boost",
+    preferredUseCases: ["boost", "transparent overdrive", "clean boost", "low gain"],
     ports: [
       {
         index: 0,
@@ -2134,6 +2182,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/BigMuffPi",
     name: "Open Big Muff",
+    category: "fuzz",
+    preferredUseCases: ["fuzz", "heavy distortion", "grunge", "shoegaze", "sustain"],
     ports: [
       {
         index: 0,
@@ -2200,6 +2250,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/brummer10/CollisionDrive",
     name: "CollisionDrive",
+    category: "overdrive",
+    preferredUseCases: ["overdrive", "crunch", "rock", "medium gain"],
     ports: [
       {
         index: 0,
@@ -2314,6 +2366,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/brummer10/MetalTone",
     name: "MetalTone",
+    category: "distortion",
+    preferredUseCases: ["high gain distortion", "metal", "heavy rock"],
     ports: [
       {
         index: 0,
@@ -2428,6 +2482,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://guitarix.sourceforge.net/plugins/gxbooster#booster",
     name: "GxBooster",
+    category: "boost",
+    preferredUseCases: ["clean boost", "signal level boost", "pre-amp boost"],
     ports: [
       {
         index: 0,
@@ -2482,6 +2538,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/ninodewit/SHIRO-Plugins/plugins/modulay",
     name: "Modulay",
+    category: "modulation",
+    preferredUseCases: ["chorus", "modulation", "tremolo"],
     ports: [
       {
         index: 0,
@@ -2596,6 +2654,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "https://github.com/ninodewit/SHIRO-Plugins/plugins/shiroverb",
     name: "Shiroverb",
+    category: "reverb",
+    preferredUseCases: ["reverb", "hall", "ambient"],
     ports: [
       {
         index: 0,
@@ -2734,6 +2794,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mda/DubDelay",
     name: "MDA DubDelay",
+    category: "delay",
+    preferredUseCases: ["delay", "dub delay", "echo"],
     ports: [
       {
         index: 0,
@@ -2872,6 +2934,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/tap/echo",
     name: "TAP Stereo Echo",
+    category: "delay",
+    preferredUseCases: ["stereo delay", "echo", "ping pong delay"],
     ports: [
       {
         index: 0,
@@ -3046,6 +3110,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://distrho.sf.net/plugins/PingPongPan",
     name: "Ping Pong Pan",
+    category: "modulation",
+    preferredUseCases: ["stereo panning", "ping pong", "auto-pan"],
     ports: [
       {
         index: 0,
@@ -3124,6 +3190,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/tal-reverb-2",
     name: "TAL-Reverb-II",
+    category: "reverb",
+    preferredUseCases: ["reverb", "hall", "space"],
     ports: [
       {
         index: 0,
@@ -3334,6 +3402,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "urn:dragonfly:room",
     name: "Dragonfly Room Reverb",
+    category: "reverb",
+    preferredUseCases: ["room reverb", "small space", "studio reverb"],
     ports: [
       {
         index: 0,
@@ -3616,6 +3686,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "urn:dragonfly:plate",
     name: "Dragonfly Plate Reverb",
+    category: "reverb",
+    preferredUseCases: ["plate reverb", "vintage reverb", "bright reverb"],
     ports: [
       {
         index: 0,
@@ -3802,6 +3874,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://guitarix.sourceforge.net/plugins/gx_compressor#_compressor",
     name: "GxCompressor",
+    category: "utility",
+    preferredUseCases: ["compression", "dynamics", "sustain control"],
     ports: [
       {
         index: 0,
@@ -3892,6 +3966,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/System-NoiseGate",
     name: "Noise Gate",
+    category: "utility",
+    preferredUseCases: ["noise gate", "noise reduction", "silence detection"],
     ports: [
       {
         index: 0,
@@ -3982,6 +4058,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/mod-devel/mod-volume",
     name: "Volume",
+    category: "utility",
+    preferredUseCases: ["volume control", "output level"],
     ports: [
       {
         index: 0,
@@ -4048,6 +4126,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "urn:mod:gxtuner",
     name: "GxTuner",
+    category: "utility",
+    preferredUseCases: ["tuner", "pitch reference"],
     ports: [
       {
         index: 0,
@@ -4318,6 +4398,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://gareus.org/oss/lv2/fat1",
     name: "Autotune",
+    category: "utility",
+    preferredUseCases: ["pitch correction", "autotune", "intonation"],
     ports: [
       {
         index: 0,
@@ -4648,6 +4730,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/tap/tubewarmth",
     name: "TAP Tubewarmth",
+    category: "overdrive",
+    preferredUseCases: ["tube saturation", "mild overdrive", "warmth", "analog character"],
     ports: [
       {
         index: 0,
@@ -4702,6 +4786,8 @@ export const pluginCatalog: PluginCatalogEntry[] = [
   {
     uri: "http://moddevices.com/plugins/tap/sigmoid",
     name: "TAP Sigmoid Booster",
+    category: "boost",
+    preferredUseCases: ["boost", "soft clipping", "harmonic enhancement"],
     ports: [
       {
         index: 0,

@@ -5,6 +5,7 @@ import type { PluginService } from "./pluginService.js";
 import type { PluginKnowledgeDbService } from "./pluginKnowledgeDbService.js";
 import type { RoleParameterProfileService } from "./roleParameterProfileService.js";
 import type { PedalboardSafetyService } from "./pedalboardSafetyService.js";
+import { pluginCatalog } from "../data/pluginCatalog.js";
 
 interface PluginCandidate {
   name: string;
@@ -136,7 +137,7 @@ export class EffectRecipeToPedalboardPlanService {
     const scored = plugins
       .map((plugin) => ({
         plugin,
-        score: scoreRecipeCandidate(plugin, preferred, knowledgeDb)
+        score: scoreRecipeCandidate(plugin, preferred, knowledgeDb, effect.role)
       }))
       .filter((entry) => entry.score > 0)
       .sort((left, right) => right.score - left.score || left.plugin.name.localeCompare(right.plugin.name));
@@ -145,17 +146,29 @@ export class EffectRecipeToPedalboardPlanService {
 }
 
 function preferredNamesForRecipe(normalized: string): string[] {
-  if (matches(normalized, ["drive", "fuzz", "dist", "dirty", "broken", "psychedelic"])) {
-    return ["AIDA-X", "Gain 2x2", "Gain"];
+  if (matches(normalized, ["dist"])) {
+    return ["DS1", "MetalTone", "CollisionDrive", "GxSD1", "Open Big Muff", "ChowCentaur", "GxTubeScreamer"];
   }
-  if (matches(normalized, ["modulation", "phaser", "swirl", "movement"])) {
-    return ["TAP Chorus/Flanger"];
+  if (matches(normalized, ["fuzz"])) {
+    return ["Open Big Muff", "DS1", "MetalTone"];
+  }
+  if (matches(normalized, ["boost"])) {
+    return ["GxBooster", "ChowCentaur", "GxTubeScreamer", "TAP Sigmoid Booster"];
+  }
+  if (matches(normalized, ["drive", "overdrive", "saturation", "dirty", "broken", "psychedelic"])) {
+    return ["GxTubeScreamer", "CollisionDrive", "GxSD1", "ChowCentaur", "DS1", "TAP Tubewarmth"];
+  }
+  if (matches(normalized, ["amp", "modeler", "ampsim", "amplifier", "cabinet", "neural"])) {
+    return ["AIDA-X", "Vintage Cabinets"];
+  }
+  if (matches(normalized, ["modulation", "phaser", "swirl", "movement", "chorus", "flanger"])) {
+    return ["TAP Chorus/Flanger", "Modulay"];
   }
   if (matches(normalized, ["delay", "echo"])) {
-    return ["Bollie Delay"];
+    return ["Bollie Delay", "MDA DubDelay", "TAP Stereo Echo"];
   }
-  if (matches(normalized, ["reverb", "space", "hall", "plate"])) {
-    return ["Dragonfly Hall Reverb", "MVerb"];
+  if (matches(normalized, ["reverb", "space", "hall", "plate", "room"])) {
+    return ["Dragonfly Hall Reverb", "MVerb", "Dragonfly Room Reverb", "Dragonfly Plate Reverb", "TAL-Reverb-II", "Shiroverb"];
   }
   if (matches(normalized, ["output", "level", "trim"])) {
     return ["Gain 2x2", "Gain", "TinyGain Stereo"];
@@ -167,33 +180,54 @@ function preferredNamesForRoleAndCharacter(role: string, character: string): str
   const normalizedRole = normalize(role);
   const normalizedCharacter = normalize(character);
 
-  if (matches(normalizedRole, ["drive", "fuzz", "dist", "overdrive", "saturation"])) {
-    return ["AIDA-X", "Gain 2x2", "Gain"];
+  if (matches(normalizedRole, ["dist"])) {
+    return ["DS1", "MetalTone", "CollisionDrive", "GxSD1", "Open Big Muff", "ChowCentaur", "GxTubeScreamer"];
+  }
+  if (matches(normalizedRole, ["fuzz"])) {
+    return ["Open Big Muff", "DS1", "MetalTone", "CollisionDrive"];
+  }
+  if (matches(normalizedRole, ["boost"])) {
+    return ["GxBooster", "ChowCentaur", "GxTubeScreamer", "TAP Sigmoid Booster"];
+  }
+  if (matches(normalizedRole, ["overdrive", "drive", "saturation"])) {
+    return ["GxTubeScreamer", "CollisionDrive", "GxSD1", "ChowCentaur", "DS1", "TAP Tubewarmth"];
+  }
+  if (matches(normalizedRole, ["amp_modeler", "amp_and_cab_modeler", "ampsim", "amp", "neural"])) {
+    return ["AIDA-X"];
   }
   if (matches(normalizedRole, ["cabinet"])) {
-    return ["Vintage Cabinets", "MOD Cabinet", "GxCabinet", "Cabinet Loader"];
+    return ["Vintage Cabinets", "AIDA-X"];
   }
-  if (matches(normalizedRole, ["modulation", "phaser", "chorus"])) {
-    return ["TAP Chorus/Flanger"];
+  if (matches(normalizedRole, ["modulation", "phaser", "chorus", "flanger"])) {
+    return ["TAP Chorus/Flanger", "Modulay"];
   }
   if (matches(normalizedRole, ["delay", "echo"])) {
-    return ["Bollie Delay"];
+    return ["Bollie Delay", "MDA DubDelay", "TAP Stereo Echo"];
   }
-  if (matches(normalizedRole, ["reverb", "space", "hall", "plate"])) {
-    return ["Dragonfly Hall Reverb", "MVerb"];
+  if (matches(normalizedRole, ["reverb", "space", "hall", "plate", "room"])) {
+    return ["Dragonfly Hall Reverb", "MVerb", "Dragonfly Room Reverb", "Dragonfly Plate Reverb", "TAL-Reverb-II", "Shiroverb"];
   }
-  if (matches(normalizedRole, ["output", "level", "trim"])) {
-    return ["Gain 2x2", "Gain", "TinyGain Stereo"];
+  if (matches(normalizedRole, ["output", "level", "trim", "gain"])) {
+    return ["Gain 2x2", "Gain", "TinyGain Stereo", "TinyGain Mono"];
   }
 
-  if (matches(normalizedCharacter, ["fuzz", "dist", "dirty", "broken", "psychedelic"])) {
-    return ["AIDA-X", "Gain 2x2", "Gain"];
+  if (matches(normalizedCharacter, ["dist", "metal", "heavy", "hard clip"])) {
+    return ["DS1", "MetalTone", "CollisionDrive", "GxSD1", "ChowCentaur", "GxTubeScreamer"];
+  }
+  if (matches(normalizedCharacter, ["fuzz", "grungy", "woolly", "broken", "psychedelic"])) {
+    return ["Open Big Muff", "DS1", "MetalTone"];
+  }
+  if (matches(normalizedCharacter, ["amp", "neural", "modeler"])) {
+    return ["AIDA-X"];
   }
   if (matches(normalizedCharacter, ["cabinet"])) {
-    return ["Vintage Cabinets", "MOD Cabinet", "GxCabinet", "Cabinet Loader"];
+    return ["Vintage Cabinets", "AIDA-X"];
   }
-  if (matches(normalizedCharacter, ["phaser", "chorus", "swirl", "movement"])) {
-    return ["TAP Chorus/Flanger"];
+  if (matches(normalizedCharacter, ["phaser", "chorus", "swirl", "movement", "flanger"])) {
+    return ["TAP Chorus/Flanger", "Modulay"];
+  }
+  if (matches(normalizedCharacter, ["overdrive", "drive", "saturation", "dirty", "warm"])) {
+    return ["GxTubeScreamer", "CollisionDrive", "GxSD1", "ChowCentaur", "DS1", "TAP Tubewarmth"];
   }
 
   return preferredNamesForRecipe(normalize(`${role} ${character}`));
@@ -217,10 +251,52 @@ function findPreferredPlugin(plugins: PluginCandidate[], preferred: string[]): P
   return null;
 }
 
+function catalogMetadataScore(plugin: PluginCandidate, requestedRole: string): number {
+  const entry = pluginCatalog.find((item) => item.uri === plugin.uri);
+  if (!entry) return 0;
+  const normalized = normalize(requestedRole);
+  let score = 0;
+
+  if (entry.category) {
+    const cat = entry.category;
+    const roleMatchesCategory =
+      (matches(normalized, ["dist"]) && (cat === "distortion" || cat === "fuzz")) ||
+      (matches(normalized, ["fuzz"]) && cat === "fuzz") ||
+      (matches(normalized, ["boost"]) && cat === "boost") ||
+      (matches(normalized, ["overdrive", "drive", "saturation"]) && (cat === "overdrive" || cat === "distortion")) ||
+      (matches(normalized, ["amp", "neural", "modeler", "ampsim"]) && (cat === "amp_modeler" || cat === "amp_and_cab_modeler")) ||
+      (matches(normalized, ["cabinet"]) && (cat === "cabinet" || cat === "amp_and_cab_modeler")) ||
+      (matches(normalized, ["modulation", "chorus", "phaser", "flanger"]) && cat === "modulation") ||
+      (matches(normalized, ["delay", "echo"]) && cat === "delay") ||
+      (matches(normalized, ["reverb", "space", "hall", "plate", "room"]) && cat === "reverb") ||
+      (matches(normalized, ["gain", "level", "trim", "output"]) && (cat === "gain" || cat === "utility"));
+    if (roleMatchesCategory) score += 40;
+
+    const roleConflictsCategory =
+      (matches(normalized, ["dist", "fuzz", "overdrive", "drive", "saturation", "boost"]) &&
+        (cat === "amp_and_cab_modeler" || cat === "amp_modeler")) ||
+      (matches(normalized, ["reverb"]) && cat === "delay") ||
+      (matches(normalized, ["delay"]) && cat === "reverb");
+    if (roleConflictsCategory) score -= 50;
+  }
+
+  if (entry.requiresExternalModel === true) {
+    const isAmpRole = matches(normalized, ["amp", "neural", "modeler", "ampsim", "cabinet"]);
+    if (!isAmpRole) score -= 30;
+  }
+
+  if (entry.avoidForRoles?.some((avoided) => normalize(avoided) === normalized)) {
+    score -= 60;
+  }
+
+  return score;
+}
+
 function scoreRecipeCandidate(
   plugin: PluginCandidate,
   preferred: string[],
-  knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>
+  knowledgeDb: Awaited<ReturnType<PluginKnowledgeDbService["load"]>>,
+  requestedRole = ""
 ): number {
   const normalizedName = normalize(plugin.name);
   const normalizedUri = normalize(plugin.uri ?? "");
@@ -236,6 +312,8 @@ function scoreRecipeCandidate(
       score += 60 - index * 5;
     }
   }
+
+  score += catalogMetadataScore(plugin, requestedRole);
 
   const entry = knowledgeDb?.plugins.find(
     (item) => normalize(item.name) === normalizedName || normalize(item.uri) === normalizedUri

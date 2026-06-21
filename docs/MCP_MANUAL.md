@@ -93,6 +93,64 @@ Prefer URIs. The MCP resolves by URI first. Name hints are a fallback, not the p
 
 ---
 
+## Plugin Semantic Classification
+
+The plugin catalog exposes `category`, `requiresExternalModel`, `preferredUseCases`, and `avoidForRoles` for every entry. These fields are **metadata**, not musical decisions. They exist so AI agents can make accurate tool selections without misidentifying plugin types.
+
+### Category Taxonomy
+
+| Category | Examples | Notes |
+|---|---|---|
+| `distortion` | DS1, MetalTone | Hard clipping, asymmetric drive |
+| `fuzz` | Open Big Muff | Extreme clipping, thick sustain |
+| `overdrive` | GxTubeScreamer, GxSD1, CollisionDrive | Soft clipping, frequency shaping |
+| `boost` | GxBooster, ChowCentaur, TAP Sigmoid Booster | Level or harmonic boost with minimal clipping |
+| `amp_modeler` | (none in catalog yet) | Neural amp model host, no built-in tone |
+| `amp_and_cab_modeler` | **AIDA-X** | Neural amp+cab model host, requires external model file |
+| `cabinet` | Vintage Cabinets | Speaker/cabinet simulation only |
+| `modulation` | TAP Chorus/Flanger, Modulay, Ping Pong Pan | Time-based modulation |
+| `delay` | Bollie Delay, MDA DubDelay, TAP Stereo Echo | Echo and time repetition |
+| `reverb` | Dragonfly Hall/Room/Plate, MVerb, Shiroverb, TAL-Reverb-II | Spatial ambience |
+| `gain` | Gain, Gain 2x2, TinyGain Mono/Stereo | Transparent gain adjustment |
+| `utility` | GxCompressor, Noise Gate, Volume, GxTuner, Autotune | Non-tonal processing |
+
+### AIDA-X: Model Host, Not a Distortion Pedal
+
+**AIDA-X is a neural network model host.** It is classified as `amp_and_cab_modeler` with `requiresExternalModel: true`.
+
+AIDA-X does NOT produce any sound of its own. It runs `.json` capture files that encode the behavior of a specific amp, cabinet, or pedal. Without a model loaded, AIDA-X passes signal through its EQ stage only.
+
+**Correct use cases for AIDA-X:**
+- Amp simulation via a loaded NAM/AIDA model (e.g. "Marshall JCM800 capture")
+- Cabinet simulation via a cab capture model
+- Full amp+cab chain replacement with a single neural model
+
+**Do NOT use AIDA-X as:**
+- A primary distortion pedal (use DS1, MetalTone, CollisionDrive, Open Big Muff instead)
+- An overdrive pedal (use GxTubeScreamer, GxSD1, ChowCentaur instead)
+- A fuzz pedal (use Open Big Muff, DS1 instead)
+
+AIDA-X has `avoidForRoles: ["distortion", "overdrive", "fuzz", "boost"]` in the catalog. The MCP selection heuristic will not recommend AIDA-X for these roles. If a user explicitly requests AIDA-X, use `preferredPluginUri` to override.
+
+### Plugin Selection Priority for Drive/Distortion Roles
+
+When the AI agent does not specify a plugin by URI, the MCP falls back to role-based heuristics:
+
+| Requested Role | Preferred Plugins (in order) |
+|---|---|
+| `distortion` | DS1 → MetalTone → CollisionDrive → GxSD1 → Open Big Muff → ChowCentaur → GxTubeScreamer |
+| `fuzz` | Open Big Muff → DS1 → MetalTone → CollisionDrive |
+| `overdrive` or `drive` | GxTubeScreamer → CollisionDrive → GxSD1 → ChowCentaur → DS1 → TAP Tubewarmth |
+| `boost` | GxBooster → ChowCentaur → GxTubeScreamer → TAP Sigmoid Booster |
+| `amp` or `amp_modeler` | AIDA-X |
+| `cabinet` | Vintage Cabinets → AIDA-X |
+
+AIDA-X **never** appears in the preferred list for distortion, fuzz, overdrive, or boost roles. It is only selected when the role explicitly maps to amp or cabinet simulation.
+
+**Always use `preferredPluginUri` when you know exactly which plugin you want.** The heuristic is a fallback for when no plugin is specified.
+
+---
+
 ### MCP — Execution and Translation Layer
 
 The MCP is responsible for:
@@ -601,6 +659,7 @@ These rules exist because AI models have been observed inventing plugin details 
 10. **Never assume `replace_effect` succeeded without checking `success`.** If `success=false`, the audio path is broken. Call `validate_current_board_audio_path` immediately and `remove_orphan_effects` to clean up.
 11. **Never add probe plugins to the board to test behavior.** Do not add a temporary "test" plugin and then remove it — this alters the live graph and may accumulate stale connections. Use `validate_current_board_audio_path` and `check_bypass_support` instead.
 12. **Duplicate before significant modifications.** Call `duplicate_pedalboard` to create a backup copy before using `modify_current_board` or a sequence of surgical edits. This is the safety net.
+13. **Never use AIDA-X as a distortion, overdrive, fuzz, or boost pedal.** AIDA-X is a neural network model host (`category: amp_and_cab_modeler`). It requires an external model file to produce any amp or pedal sound. Without a loaded model it does not distort the signal. For distortion use DS1, MetalTone, or CollisionDrive. For fuzz use Open Big Muff. For overdrive use GxTubeScreamer or GxSD1. Specify the correct plugin via `preferredPluginUri` so the MCP does not guess.
 
 ---
 
