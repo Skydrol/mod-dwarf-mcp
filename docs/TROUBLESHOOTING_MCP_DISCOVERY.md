@@ -50,5 +50,5 @@ codex mcp add mod_dwarf_mcp --env MOD_DWARF_ENABLE_WRITE_TOOLS=true --env MOD_DW
 
 ## Notes
 
-- The server version was bumped to `0.1.1` during this fix.
+- The server version was bumped to `0.1.2` during this fix.
 - The main workaround was not to trust the discovery cache alone when the runtime server and source tree disagree.

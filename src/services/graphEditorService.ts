@@ -565,8 +565,9 @@ export class GraphEditorService {
 
     const paramNotes: string[] = [];
     for (const [symbol, value] of Object.entries(input.parameters)) {
-      const path = `/effect/parameter/set/${uiGraphRef(`${input.instance}/${symbol}`)} ${value}`;
-      const r = await this.writeApi.getBytes(path, `set ${symbol}=${value} on ${input.instance}`);
+      const path = "/effect/parameter/set/";
+      const payload = `${uiGraphRef(`${input.instance}/${symbol}`)}/${formatNumber(value)}`;
+      const r = await this.writeApi.postJson(path, payload, `set ${symbol}=${value} on ${input.instance}`);
       calls.push(rec(path, r.ok, r.status));
       paramNotes.push(`${symbol} = ${value} (HTTP ${r.status}${r.ok ? "" : " — failed"})`);
     }
@@ -1031,6 +1032,10 @@ function deriveInstance(
 
 function rec(path: string, ok: boolean, httpStatus?: number): GraphEditApiCall {
   return { path, status: ok ? "success" : "failed", httpStatus };
+}
+
+function formatNumber(value: number): string {
+  return Number(value.toFixed(4)).toString();
 }
 
 async function safeInspect(
