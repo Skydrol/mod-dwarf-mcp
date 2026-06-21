@@ -185,7 +185,10 @@ export class ExecutePedalboardPlanService {
       if (inPlaceResult.ok) {
         if (savedBundlepath && savedBundlepath !== expectedBundlepath) {
           saveNotes.push(
-            `Modified and saved in-place (bundlepath: ${savedBundlepath}).`
+            `WARNING: modify saved to '${savedBundlepath}' instead of the target '${expectedBundlepath}'. ` +
+            `The firmware may have lost the active bundle designation. ` +
+            `The original board at '${expectedBundlepath}' was NOT overwritten. ` +
+            `Consider deleting '${savedBundlepath}' and using duplicate_pedalboard + surgical tools instead.`
           );
         } else {
           saveNotes.push(`Modified and saved in-place: '${savedTitle}'.`);

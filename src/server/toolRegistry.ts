@@ -34,6 +34,10 @@ import { listSnapshotsTool } from "../tools/listSnapshots.js";
 import { loadExistingPedalboardTool } from "../tools/loadExistingPedalboard.js";
 import { planPedalboardFromPromptTool } from "../tools/planPedalboardFromPrompt.js";
 import { saveLoadedPedalboardAsNewTool } from "../tools/saveLoadedPedalboardAsNew.js";
+import { validateAudioPathTool } from "../tools/validateAudioPath.js";
+import { removeOrphanEffectsTool } from "../tools/removeOrphanEffects.js";
+import { checkBypassSupportTool } from "../tools/checkBypassSupport.js";
+import { cleanupSnapshotReferencesTool } from "../tools/cleanupSnapshotReferences.js";
 import type { ToolContext } from "../tools/toolContext.js";
 import {
   dryPedalboardBundleSchema,
@@ -435,7 +439,8 @@ export function registerTools(server: McpServer, context: ToolContext): void {
         "USE WHEN USER SAYS: 'add reverb', 'put a shimmer at the end', 'include a boost before the fuzz', 'adicionar reverb', 'colocar um chorus'. " +
         "DO NOT rebuild the whole board for a single plugin addition — use this tool instead. " +
         "Workflow: 1) search_plugins to find URI, 2) list_pedalboards to get bundlepath, 3) add_effect. " +
-        "Requires: bundlepath, pluginUri (from list_plugins/search_plugins), position ('first'|'last'), confirm=true.",
+        "Requires: bundlepath, pluginUri (from list_plugins/search_plugins), position, confirm=true. " +
+        "Position supports: 'first', 'last', 'after:<instance>' (e.g. after:DS1), 'before:<instance>' (e.g. before:Reverb). Instance names from inspect_pedalboard.",
       inputSchema: {
         bundlepath: z.string().min(1),
         pluginUri: z.string().min(1).describe("Exact LV2 URI — use list_plugins or search_plugins."),
@@ -444,7 +449,11 @@ export function registerTools(server: McpServer, context: ToolContext): void {
           .min(1)
           .optional()
           .describe("Instance name slug (e.g. 'MyReverb'). Derived from URI if omitted."),
-        position: z.enum(["first", "last"]).default("last"),
+        position: z.string().default("last").describe(
+          "Where to insert: 'first' (before first plugin), 'last' (after last plugin), " +
+          "'after:<instance>' (e.g. 'after:DS1'), 'before:<instance>' (e.g. 'before:Reverb'). " +
+          "Instance names come from inspect_pedalboard."
+        ),
         confirm: z.boolean()
       }
     },
@@ -690,5 +699,70 @@ export function registerTools(server: McpServer, context: ToolContext): void {
       }
     },
     async (input) => runLiveGraphConnectionExperimentTool(input, context)
+  );
+
+  server.registerTool(
+    "validate_current_board_audio_path",
+    {
+      title: "Validate the audio signal path of a pedalboard",
+      description:
+        "Inspect the connection graph of a pedalboard bundle and verify that audio flows from " +
+        "hardware capture ports through all plugins to playback ports. Reports orphan plugins " +
+        "(not connected to the signal path) and whether the chain is complete. " +
+        "Call after replace_effect, remove_effect, or add_effect to verify the result. " +
+        "USE WHEN: replace_effect returns 0 rewired connections, or when the board sounds silent.",
+      inputSchema: {
+        bundlepath: z.string().min(1)
+      }
+    },
+    async (input) => validateAudioPathTool(input, context)
+  );
+
+  server.registerTool(
+    "remove_orphan_effects",
+    {
+      title: "Remove orphan (disconnected) plugins from a pedalboard",
+      description:
+        "Write-gated cleanup: detect plugins not connected to the audio path and remove them. " +
+        "USE AFTER: replace_effect or remove_effect reports broken connections, or when " +
+        "validate_current_board_audio_path returns orphanPlugins.length > 0.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => removeOrphanEffectsTool(input, context)
+  );
+
+  server.registerTool(
+    "check_bypass_support",
+    {
+      title: "Check if the HTTP bypass endpoint is supported on this firmware",
+      description:
+        "Probe the /effect/bypass HTTP endpoint to determine if toggle_effect_bypass will work. " +
+        "Returns supported=true if the endpoint responds (any status other than 404/405), " +
+        "supported=false if the endpoint does not exist on this firmware version. " +
+        "Call this before toggle_effect_bypass to avoid unexpected failures.",
+      inputSchema: {}
+    },
+    async (input) => checkBypassSupportTool(input, context)
+  );
+
+  server.registerTool(
+    "cleanup_snapshot_references",
+    {
+      title: "Remove references to a deleted plugin from snapshots.json",
+      description:
+        "Write-gated SSH operation: after remove_effect or replace_effect, clean up any " +
+        "parameter references to the removed instance in the bundle's snapshots.json file. " +
+        "If not called, snapshots may contain stale parameter entries for non-existent plugins. " +
+        "Requires: bundlepath, removedInstance (the instance name that was removed), confirm=true.",
+      inputSchema: {
+        bundlepath: z.string().min(1),
+        removedInstance: z.string().min(1).describe("Instance name that was removed (e.g. 'DS1', '/graph/DS1')."),
+        confirm: z.boolean()
+      }
+    },
+    async (input) => cleanupSnapshotReferencesTool(input, context)
   );
 }

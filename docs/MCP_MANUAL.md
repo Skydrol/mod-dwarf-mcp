@@ -172,12 +172,16 @@ Use these for targeted single-operation changes. **Do not rebuild the whole boar
 
 | Tool | When to use |
 |------|-------------|
-| `add_effect` | "Add a reverb at the end", "put a boost before the fuzz", "adicionar shimmer". Inserts one plugin and rewires. |
-| `remove_effect` | "Remove the chorus", "take out the delay", "tirar o reverb". Disconnects and removes one plugin. |
-| `replace_effect` | **"Swap the reverb for X", "replace the chorus with a flanger", "trocar o reverb por outro".** Atomic remove+add+rewire. ⚠️ Do NOT load a different pedalboard when asked to swap one effect — use this. |
+| `add_effect` | "Add a reverb at the end", "put a boost before the fuzz", "adicionar shimmer", "adicione um fuzz depois desse reverb". Supports `position: "after:<instance>"` and `"before:<instance>"`. |
+| `remove_effect` | "Remove the chorus", "take out the delay", "tirar o reverb". Disconnects and removes one plugin. After removal, call `cleanup_snapshot_references` to remove stale snapshot entries. |
+| `replace_effect` | **"Swap the reverb for X", "replace the chorus with a flanger", "trocar o reverb por outro".** Atomic remove+add+rewire. ⚠️ Check `success` — returns `false` if 0 connections were rewired. |
 | `set_effect_parameter` | "More shimmer", "less delay", "turn up the gain", "mais shimmer", "menos delay". Tweaks knobs in-place. |
-| `toggle_effect_bypass` | **"Bypass the reverb", "disable the fuzz", "enable the chorus"**. Toggles bypass state live. Use `persist=true` to save to bundle. |
+| `toggle_effect_bypass` | **"Bypass the reverb", "disable the fuzz"**. ⚠️ Returns `unsupported=true` on some firmware — call `check_bypass_support` first. |
 | `activate_snapshot` | **"Switch to Solo", "go to the Clean preset", "ir para o snapshot Solo"**. Loads a named snapshot on the current board. |
+| `validate_current_board_audio_path` | **Always call after `replace_effect` returns `success=false`.** Detects broken chains and orphan plugins. |
+| `remove_orphan_effects` | Remove disconnected plugins from the audio path. Call when `validate_current_board_audio_path` reports `orphanPlugins.length > 0`. |
+| `cleanup_snapshot_references` | Remove stale entries in `snapshots.json` after `remove_effect` or `replace_effect`. |
+| `check_bypass_support` | Probe whether the HTTP bypass endpoint works on this firmware before calling `toggle_effect_bypass`. |
 
 All surgical tools:
 - Load the board, make the targeted change, save in-place (no new board created)
@@ -291,22 +295,23 @@ Use `set_effect_parameter`.
 
 **Never guess parameter symbols.** If you pass a wrong symbol, the tool returns the full list of valid symbols — use that to retry. Always call `get_plugin_parameters` first when unsure.
 
-### "Add reverb to the end of the chain"
+### "Add reverb to the end of the chain" / "Add a fuzz after the DS1"
 
-Use `add_effect`.
+Use `add_effect`. The `position` field supports:
+- `"last"` — after the last plugin (before hardware output)
+- `"first"` — before the first plugin (after hardware input)
+- `"after:<instance>"` — immediately after a named plugin (e.g. `"after:DS1"`)
+- `"before:<instance>"` — immediately before a named plugin (e.g. `"before:Reverb"`)
 
-1. Call `list_plugins` to get the plugin URI.
-2. Call `list_pedalboards` to get the bundlepath.
-3. Call `add_effect` with `position: "last"`.
+Instance names come from `inspect_pedalboard`.
 
 ```json
-{
-  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
-  "pluginUri": "urn:dragonfly:hall",
-  "position": "last",
-  "confirm": true
-}
+{ "bundlepath": "...", "pluginUri": "urn:dragonfly:hall", "position": "last", "confirm": true }
+{ "bundlepath": "...", "pluginUri": "http://...", "position": "after:DS1", "confirm": true }
+{ "bundlepath": "...", "pluginUri": "http://...", "position": "before:Reverb", "confirm": true }
 ```
+
+After every `add_effect`, check `afterState.connections` to confirm the new plugin appears in the chain.
 
 ### "Remove the chorus"
 
@@ -331,6 +336,7 @@ Use `replace_effect`. Atomic remove + add + rewire.
 1. Call `inspect_pedalboard` to find the instance to replace.
 2. Call `list_plugins` to get the new plugin's URI.
 3. Call `replace_effect`.
+4. **Check `success` and the rewired connection counts in `notes` before reporting success.**
 
 ```json
 {
@@ -341,25 +347,37 @@ Use `replace_effect`. Atomic remove + add + rewire.
 }
 ```
 
+**⚠️ Critical: `replace_effect` returns `success=false` if the replaced plugin had connections but 0 were rewired.** This means the audio path is broken — the new plugin is present in the graph but not connected to anything. If this happens:
+1. Call `validate_current_board_audio_path` to see the actual state.
+2. Call `remove_orphan_effects` to remove the disconnected plugin.
+3. Use `add_effect` with `position: "after:<prev>"` or `"before:<next>"` to re-insert at the correct position with explicit connections.
+
+After every successful `replace_effect`, verify `afterState.connections` shows the new instance connected to the expected neighbours.
+
 ### "Bypass the reverb" / "Disable the chorus"
 
-Use `toggle_effect_bypass`.
+> **⚠️ Bypass via HTTP is NOT reliable on this firmware.**
+>
+> On MOD Dwarf firmware v1.13.5.3315 and similar versions, the `/effect/bypass` HTTP endpoint returns HTTP 404. `toggle_effect_bypass` will return `unsupported=true` on these devices. Real bypass (the LED button on the hardware) is controlled via WebSocket, not HTTP.
+>
+> Call `check_bypass_support` to probe the endpoint before relying on it.
 
-1. Call `inspect_pedalboard` to get the instance name.
-2. Call `toggle_effect_bypass` with `bypassed: true` to disable, `false` to enable.
-3. Use `persist: true` if the bypass state should survive the next board load.
+**If bypass IS supported** (check_bypass_support returns `supported=true`):
+
+Use `toggle_effect_bypass` with `bypassed: true` to disable, `false` to enable.
 
 ```json
-{
-  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
-  "instance": "reverb_3",
-  "bypassed": true,
-  "persist": false,
-  "confirm": true
-}
+{ "bundlepath": "...", "instance": "reverb_3", "bypassed": true, "persist": false, "confirm": true }
 ```
 
-`persist: false` (default) toggles the live graph only — it resets when the board is reloaded. Use `persist: true` to write the bypass state permanently to the bundle.
+**If bypass is NOT supported** (returns `unsupported=true`):
+
+Do NOT simulate bypass by setting parameters (drive/gain/wet) to zero. That is NOT bypass — it changes the signal path but the plugin's DSP is still running, and the LED state on the hardware does not reflect it.
+
+The correct alternatives:
+1. **Snapshot-based switching**: Create two snapshots — one with the effect active and one with it removed from the chain via `modify_current_board`. Switch between them with `activate_snapshot`.
+2. **Remove the effect**: If the user wants the effect permanently off, use `remove_effect` instead of faking bypass.
+3. **Accept the limitation**: Tell the user that live bypass toggle is not available via MCP on this firmware and must be done from the MOD web UI.
 
 ### "Switch to the Solo snapshot" / "Go to the Clean preset"
 
@@ -423,6 +441,8 @@ Key constraints:
 - Always provide the **complete** desired plugin list in the recipe, not just what changes. The MCP replaces the entire graph.
 - Use `inspect_pedalboard` to understand the current state before deciding what to change.
 - The board's bundlepath stays the same after modification — no duplicate is created in the library.
+
+> **⚠️ Known firmware behavior:** On some firmware versions, `modify_current_board` may create a NEW board (e.g. "Lithium (2)") instead of overwriting the original. This happens if the firmware loses its "active bundle" designation between the plugin removal step and the save step. If the result notes include "WARNING: modify saved to '...' instead of the target '...'" — the original board was NOT modified. In that case: delete the accidentally created duplicate from the MOD web UI, use `duplicate_pedalboard` to create a safe copy of the original, then apply changes via surgical tools (`add_effect`, `remove_effect`, `replace_effect`).
 
 **For smaller changes, use the surgical tools** (`add_effect`, `remove_effect`, `replace_effect`, `set_effect_parameter`) instead. They are faster and safer.
 
@@ -498,6 +518,46 @@ Call: `modify_current_board({ bundlepath: "/root/.pedalboards/My_Song.pedalboard
 
 ---
 
+## Audio Path Validation
+
+Use the validation tools to detect broken chains and orphan plugins without touching the board.
+
+### After `replace_effect` returns `success=false`
+
+```json
+{ "bundlepath": "/root/.pedalboards/My_Board.pedalboard" }
+```
+
+Call `validate_current_board_audio_path`. The response shows:
+- `chainPlugins`: plugins reachable from `capture_1`/`capture_2` via the connection graph
+- `orphanPlugins`: plugins present in the graph but not connected to the audio path
+- `broken`: `true` if any chain plugin is a dead end (no outgoing connections toward playback)
+- `path`: ordered instance names from input to output
+
+If `orphanPlugins.length > 0`, call `remove_orphan_effects`:
+
+```json
+{ "bundlepath": "...", "confirm": true }
+```
+
+This removes the disconnected plugin(s) and saves the board in-place.
+
+### After `remove_effect` — clean up stale snapshot references
+
+When a plugin is removed, any snapshot that referenced that instance by name becomes stale. Call `cleanup_snapshot_references`:
+
+```json
+{
+  "bundlepath": "/root/.pedalboards/My_Board.pedalboard",
+  "removedInstance": "TAP_ChorFlng",
+  "confirm": true
+}
+```
+
+This reads `snapshots.json` via SSH, removes the stale entries, and writes it back.
+
+---
+
 ## Prompt-Driven Use (Fallback)
 
 When a structured recipe is not available:
@@ -537,8 +597,10 @@ These rules exist because AI models have been observed inventing plugin details 
 6. **Never call creation tools without knowing what's installed.** `list_plugins` is mandatory before any creation flow.
 7. **Never load a different pedalboard when asked to swap one effect.** Use `replace_effect` — it swaps the plugin in-place without changing the board. Loading another board loses the user's current setup.
 8. **Always verify `afterState` after every write operation.** Every surgical tool returns `afterState` — check it to confirm the board looks as intended before reporting success to the user.
-9. **Never bypass an effect by rebuilding the board.** Use `toggle_effect_bypass` — it toggles bypass state in the live graph without touching the signal chain.
-10. **Duplicate before significant modifications.** Call `duplicate_pedalboard` to create a backup copy before using `modify_current_board` or a sequence of surgical edits. This is the safety net.
+9. **Never fake bypass by setting gain/wet/drive parameters to zero.** This is NOT bypass. The plugin still processes audio; only the parameter value changes. Real bypass routes signal around the plugin entirely and changes the LED on the hardware. If `toggle_effect_bypass` returns `unsupported=true`, tell the user — do not silently degrade to parameter zeroing.
+10. **Never assume `replace_effect` succeeded without checking `success`.** If `success=false`, the audio path is broken. Call `validate_current_board_audio_path` immediately and `remove_orphan_effects` to clean up.
+11. **Never add probe plugins to the board to test behavior.** Do not add a temporary "test" plugin and then remove it — this alters the live graph and may accumulate stale connections. Use `validate_current_board_audio_path` and `check_bypass_support` instead.
+12. **Duplicate before significant modifications.** Call `duplicate_pedalboard` to create a backup copy before using `modify_current_board` or a sequence of surgical edits. This is the safety net.
 
 ---
 

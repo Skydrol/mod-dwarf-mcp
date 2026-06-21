@@ -120,7 +120,8 @@ export function createMcpServer(deps: ServerDependencies): McpServer {
   context.graphEditorService = new GraphEditorService(
     context.pedalboardService,
     context.pluginService,
-    deps.writeHttp ?? null
+    deps.writeHttp ?? null,
+    deps.ssh
   );
 
   void deps.http;

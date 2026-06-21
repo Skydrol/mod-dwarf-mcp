@@ -1,5 +1,5 @@
 /**
- * Comprehensive test runner for all 37 MCP tools.
+ * Comprehensive test runner for all 41 MCP tools.
  * Tests read-only tools fully, guard checks for write tools, and live write tests on the Pink Floyd board.
  * Run: node test_scripts/test_all_tools.mjs
  */
@@ -290,7 +290,7 @@ await test("convert basic recipe to plan", async () => {
 
 section("write tool guard checks (confirm=false / no writeApi)");
 
-const graphEditorNoWrite = new GraphEditorService(pedalboardService, pluginService, null);
+const graphEditorNoWrite = new GraphEditorService(pedalboardService, pluginService, null, null);
 
 await test("add_effect: writeApi=null → fails gracefully", async () => {
   const r = await graphEditorNoWrite.addEffect({
@@ -401,7 +401,7 @@ if (pinkFloydPath) {
   section("LIVE WRITE TESTS — Pink Floyd: Shine On You Crazy Diamond");
   console.log(`  Target: ${pinkFloydPath}`);
 
-  const graphEditor = new GraphEditorService(pedalboardService, pluginService, writeHttp);
+  const graphEditor = new GraphEditorService(pedalboardService, pluginService, writeHttp, ssh);
 
   // First inspect to see what's there
   await test("inspect before edits", async () => {
@@ -455,6 +455,37 @@ if (pinkFloydPath) {
     const r = await loadService.load({ bundlePath: pinkFloydPath, confirm: true });
     if (!r.load?.success) throw new Error("load failed: " + JSON.stringify(r.notes));
     return "board loaded ok";
+  });
+
+  section("Audio Path Validation");
+
+  await test("validate_current_board_audio_path — find Pink Floyd board", async () => {
+    const boards = await pedalboardService.listPedalboards("user");
+    if (boards.user.length === 0) return "skip — no user boards";
+    const board = boards.user[0];
+    const result = await graphEditor.validateAudioPath(board.bundlePath);
+    if (!result.bundlepath) throw new Error("no bundlepath in result");
+    return `valid=${result.valid} chain=${result.chainPlugins.length} orphans=${result.orphanPlugins.length}`;
+  });
+
+  await test("check_bypass_support — guard (no writeApi)", async () => {
+    const noWriteEditor = new GraphEditorService(pedalboardService, pluginService, null, null);
+    const result = await noWriteEditor.checkBypassSupport();
+    if (result.supported !== false) throw new Error("should return supported=false without writeApi");
+    return "guard ok — live probe skipped (firmware hangs on unknown instances; test via toggle_effect_bypass)";
+  });
+
+  await test("remove_orphan_effects — guard (confirm=false)", async () => {
+    const result = await graphEditor.removeOrphanEffects({ bundlepath: "/any", confirm: false });
+    if (result.success !== false) throw new Error("should return success=false when not confirmed");
+    return "guard ok";
+  });
+
+  await test("cleanup_snapshot_references — guard (no SSH)", async () => {
+    const noSshEditor = new GraphEditorService(pedalboardService, pluginService, null, null);
+    const result = await noSshEditor.cleanupSnapshotReferences({ bundlepath: "/any", removedInstance: "DS1", confirm: true });
+    if (result.success !== false) throw new Error("should fail without SSH");
+    return "guard ok";
   });
 
 } else {

@@ -4,6 +4,7 @@ import { join, basename } from "node:path";
 import type { PedalboardService } from "./pedalboardService.js";
 import type { PluginService } from "./pluginService.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
+import type { SshClient } from "../clients/sshClient.js";
 import type { PedalboardInspection } from "../types/pedalboard.js";
 import { uiGraphInstancePath, uiGraphRef } from "./liveGraphRefs.js";
 import { makeTarGz } from "../utils/tarGz.js";
@@ -23,6 +24,7 @@ export interface GraphEditResult {
 
 export interface BypassResult {
   success: boolean;
+  unsupported: boolean;
   notes: string[];
   instance: string;
   bypassed: boolean;
@@ -45,6 +47,18 @@ export interface DuplicateBoardResult {
   apiCalls: GraphEditApiCall[];
 }
 
+export interface AudioPathValidationResult {
+  bundlepath: string;
+  valid: boolean;
+  hasCapture: boolean;
+  hasPlayback: boolean;
+  reachesPlayback: boolean;
+  chainPlugins: string[];
+  orphanPlugins: string[];
+  notes: string[];
+  inspection: PedalboardInspection;
+}
+
 // Same encoding as the global escape() used throughout the live authoring plan —
 // encodes special chars but NOT forward slashes, as the MOD firmware expects.
 // eslint-disable-next-line no-restricted-globals -- intentional: MOD firmware URI encoding
@@ -54,7 +68,8 @@ export class GraphEditorService {
   constructor(
     private readonly pedalboardService: PedalboardService,
     private readonly pluginService: PluginService,
-    private readonly writeApi: WriteHttpClient | null
+    private readonly writeApi: WriteHttpClient | null,
+    private readonly sshClient: SshClient | null = null
   ) {}
 
   // ─── add_effect ──────────────────────────────────────────────────────────────
@@ -63,7 +78,7 @@ export class GraphEditorService {
     bundlepath: string;
     pluginUri: string;
     instanceName?: string;
-    position: "first" | "last";
+    position: string;
     confirm: boolean;
   }): Promise<GraphEditResult> {
     if (!input.confirm) return notConfirmed();
@@ -88,6 +103,24 @@ export class GraphEditorService {
     const instance = input.instanceName ?? deriveInstance(input.pluginUri, inspection.pluginsUsed);
     const calls: GraphEditApiCall[] = [];
 
+    const parsed = parseAddPosition(input.position);
+
+    if ((parsed.type === "after" || parsed.type === "before")) {
+      const refInstance = parsed.instance;
+      const exists = inspection.pluginsUsed.some(
+        (p) => normalizeInstanceRef(p.instance) === refInstance
+      );
+      if (!exists) {
+        const available = inspection.pluginsUsed.map((p) => normalizeInstanceRef(p.instance)).join(", ");
+        return {
+          success: false,
+          notes: [`Reference instance '${parsed.instance}' not found on board. Available: ${available}`],
+          apiCalls: [],
+          afterState: null
+        };
+      }
+    }
+
     const loadResult = await this.writeApi.postForm(
       "/pedalboard/load_bundle/",
       { bundlepath: input.bundlepath },
@@ -96,16 +129,17 @@ export class GraphEditorService {
     calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
     if (!loadResult.ok) return fail("Failed to load bundle.", calls);
 
-    const x = input.position === "last" ? 300 + inspection.pluginsUsed.length * 200 : 100;
+    const x = parsed.type === "last" ? 300 + inspection.pluginsUsed.length * 200 : 100;
     const addPath = `/effect/add/${uiGraphInstancePath(instance)}?x=${x}&y=200&uri=${legacyEscape(input.pluginUri)}`;
     const addResult = await this.writeApi.getBytes(addPath, `add ${instance}`);
     calls.push(rec(addPath, addResult.ok, addResult.status));
     if (!addResult.ok) return fail(`Failed to add plugin instance ${instance}.`, calls);
 
     const connectNotes: string[] = [];
+    const newInputRefs = ports.audioInputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
+    const newOutputRefs = ports.audioOutputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
 
-    if (input.position === "last") {
-      // Connections going to playback ports (the current last plugin's outputs go here)
+    if (parsed.type === "last") {
       const toPlayback = connections.filter((c) => /\/graph\/playback_\d+$/.test(c.head));
       for (const conn of toPlayback) {
         const r = await this.writeApi.getBytes(
@@ -114,9 +148,7 @@ export class GraphEditorService {
         );
         calls.push(rec(`/effect/disconnect/${conn.tail},${conn.head}`, r.ok, r.status));
       }
-      // Connect previous last plugin's outputs to new plugin's inputs
       const prevTails = toPlayback.map((c) => c.tail);
-      const newInputRefs = ports.audioInputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
       for (let i = 0; i < Math.min(prevTails.length, newInputRefs.length); i++) {
         const r = await this.writeApi.getBytes(
           `/effect/connect/${prevTails[i]},${newInputRefs[i]}`,
@@ -125,8 +157,6 @@ export class GraphEditorService {
         calls.push(rec(`/effect/connect/${prevTails[i]},${newInputRefs[i]}`, r.ok, r.status));
         connectNotes.push(`Connected ${prevTails[i]} → ${newInputRefs[i]}`);
       }
-      // Connect new plugin's outputs to playback ports
-      const newOutputRefs = ports.audioOutputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
       const playbackPorts = ["/graph/playback_1", "/graph/playback_2"].slice(0, newOutputRefs.length);
       for (let i = 0; i < Math.min(newOutputRefs.length, playbackPorts.length); i++) {
         const r = await this.writeApi.getBytes(
@@ -136,8 +166,7 @@ export class GraphEditorService {
         calls.push(rec(`/effect/connect/${newOutputRefs[i]},${playbackPorts[i]}`, r.ok, r.status));
         connectNotes.push(`Connected ${newOutputRefs[i]} → ${playbackPorts[i]}`);
       }
-    } else {
-      // "first": capture ports currently go to the first plugin — insert before it
+    } else if (parsed.type === "first") {
       const fromCapture = connections.filter((c) => /\/graph\/capture_\d+$/.test(c.tail));
       for (const conn of fromCapture) {
         const r = await this.writeApi.getBytes(
@@ -146,9 +175,7 @@ export class GraphEditorService {
         );
         calls.push(rec(`/effect/disconnect/${conn.tail},${conn.head}`, r.ok, r.status));
       }
-      // capture → new plugin
       const captureTails = fromCapture.map((c) => c.tail);
-      const newInputRefs = ports.audioInputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
       for (let i = 0; i < Math.min(captureTails.length, newInputRefs.length); i++) {
         const r = await this.writeApi.getBytes(
           `/effect/connect/${captureTails[i]},${newInputRefs[i]}`,
@@ -157,9 +184,7 @@ export class GraphEditorService {
         calls.push(rec(`/effect/connect/${captureTails[i]},${newInputRefs[i]}`, r.ok, r.status));
         connectNotes.push(`Connected ${captureTails[i]} → ${newInputRefs[i]}`);
       }
-      // new plugin → old first plugin inputs
       const prevFirstHeads = fromCapture.map((c) => c.head);
-      const newOutputRefs = ports.audioOutputs.map((p) => uiGraphRef(`${instance}/${p.symbol}`));
       for (let i = 0; i < Math.min(newOutputRefs.length, prevFirstHeads.length); i++) {
         const r = await this.writeApi.getBytes(
           `/effect/connect/${newOutputRefs[i]},${prevFirstHeads[i]}`,
@@ -167,6 +192,58 @@ export class GraphEditorService {
         );
         calls.push(rec(`/effect/connect/${newOutputRefs[i]},${prevFirstHeads[i]}`, r.ok, r.status));
         connectNotes.push(`Connected ${newOutputRefs[i]} → ${prevFirstHeads[i]}`);
+      }
+    } else if (parsed.type === "after") {
+      const refInstance = parsed.instance;
+      const toNext = connections.filter((c) => c.tail.startsWith(`${refInstance}/`));
+      for (const conn of toNext) {
+        const r = await this.writeApi.getBytes(
+          `/effect/disconnect/${conn.tail},${conn.head}`,
+          `disconnect ${conn.tail} from ${conn.head}`
+        );
+        calls.push(rec(`/effect/disconnect/${conn.tail},${conn.head}`, r.ok, r.status));
+      }
+      for (let i = 0; i < Math.min(toNext.length, newInputRefs.length); i++) {
+        const r = await this.writeApi.getBytes(
+          `/effect/connect/${toNext[i].tail},${newInputRefs[i]}`,
+          `connect ${toNext[i].tail} → ${newInputRefs[i]}`
+        );
+        calls.push(rec(`/effect/connect/${toNext[i].tail},${newInputRefs[i]}`, r.ok, r.status));
+        connectNotes.push(`Connected ${toNext[i].tail} → ${newInputRefs[i]}`);
+      }
+      for (let i = 0; i < Math.min(newOutputRefs.length, toNext.length); i++) {
+        const r = await this.writeApi.getBytes(
+          `/effect/connect/${newOutputRefs[i]},${toNext[i].head}`,
+          `connect ${newOutputRefs[i]} → ${toNext[i].head}`
+        );
+        calls.push(rec(`/effect/connect/${newOutputRefs[i]},${toNext[i].head}`, r.ok, r.status));
+        connectNotes.push(`Connected ${newOutputRefs[i]} → ${toNext[i].head}`);
+      }
+    } else {
+      const refInstance = (parsed as { type: "before"; instance: string }).instance;
+      const fromPrev = connections.filter((c) => c.head.startsWith(`${refInstance}/`));
+      for (const conn of fromPrev) {
+        const r = await this.writeApi.getBytes(
+          `/effect/disconnect/${conn.tail},${conn.head}`,
+          `disconnect ${conn.tail} from ${conn.head}`
+        );
+        calls.push(rec(`/effect/disconnect/${conn.tail},${conn.head}`, r.ok, r.status));
+      }
+      for (let i = 0; i < Math.min(fromPrev.length, newInputRefs.length); i++) {
+        const r = await this.writeApi.getBytes(
+          `/effect/connect/${fromPrev[i].tail},${newInputRefs[i]}`,
+          `connect ${fromPrev[i].tail} → ${newInputRefs[i]}`
+        );
+        calls.push(rec(`/effect/connect/${fromPrev[i].tail},${newInputRefs[i]}`, r.ok, r.status));
+        connectNotes.push(`Connected ${fromPrev[i].tail} → ${newInputRefs[i]}`);
+      }
+      for (let i = 0; i < Math.min(newOutputRefs.length, fromPrev.length); i++) {
+        const r = await this.writeApi.getBytes(
+          `/effect/connect/${newOutputRefs[i]},${fromPrev[i].head}`,
+          `connect ${newOutputRefs[i]} → ${fromPrev[i].head}`
+        );
+        calls.push(rec(`/effect/connect/${newOutputRefs[i]},${fromPrev[i].head}`, r.ok, r.status));
+        connectNotes.push(`Connected ${newOutputRefs[i]} → ${fromPrev[i].head}`);
       }
     }
 
@@ -324,6 +401,9 @@ export class GraphEditorService {
     const incomingConns = connections.filter((c) => c.head.startsWith(`${instanceRef}/`));
     const outgoingConns = connections.filter((c) => c.tail.startsWith(`${instanceRef}/`));
 
+    const hadIncoming = incomingConns.length > 0;
+    const hadOutgoing = outgoingConns.length > 0;
+
     const newInstance =
       input.newInstanceName ?? deriveInstance(input.newPluginUri, inspection.pluginsUsed);
     const calls: GraphEditApiCall[] = [];
@@ -336,7 +416,6 @@ export class GraphEditorService {
     calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
     if (!loadResult.ok) return fail("Failed to load bundle.", calls);
 
-    // Disconnect all connections of the old plugin
     for (const conn of [...incomingConns, ...outgoingConns]) {
       const r = await this.writeApi.getBytes(
         `/effect/disconnect/${conn.tail},${conn.head}`,
@@ -345,13 +424,11 @@ export class GraphEditorService {
       calls.push(rec(`/effect/disconnect/${conn.tail},${conn.head}`, r.ok, r.status));
     }
 
-    // Remove old plugin
     const removePath = `/effect/remove/${uiGraphInstancePath(input.instanceToReplace)}`;
     const removeResult = await this.writeApi.getBytes(removePath, `remove ${input.instanceToReplace}`);
     calls.push(rec(removePath, removeResult.ok, removeResult.status));
     if (!removeResult.ok) return fail(`Failed to remove ${input.instanceToReplace}.`, calls);
 
-    // Add replacement plugin at same rough position
     const replacedIndex = inspection.pluginsUsed.findIndex(
       (p) => normalizeInstanceRef(p.instance) === instanceRef
     );
@@ -361,11 +438,13 @@ export class GraphEditorService {
     calls.push(rec(addPath, addResult.ok, addResult.status));
     if (!addResult.ok) return fail(`Failed to add replacement plugin ${newInstance}.`, calls);
 
-    // Rewire: incoming → new plugin inputs, new plugin outputs → outgoing
     const newInputRefs = newPorts.audioInputs.map((p) => uiGraphRef(`${newInstance}/${p.symbol}`));
     const newOutputRefs = newPorts.audioOutputs.map((p) => uiGraphRef(`${newInstance}/${p.symbol}`));
     const inTails = incomingConns.map((c) => c.tail);
     const outHeads = outgoingConns.map((c) => c.head);
+
+    let rewiredIn = 0;
+    let rewiredOut = 0;
 
     for (let i = 0; i < Math.min(inTails.length, newInputRefs.length); i++) {
       const r = await this.writeApi.getBytes(
@@ -373,6 +452,7 @@ export class GraphEditorService {
         `rewire in: ${inTails[i]} → ${newInputRefs[i]}`
       );
       calls.push(rec(`/effect/connect/${inTails[i]},${newInputRefs[i]}`, r.ok, r.status));
+      if (r.ok) rewiredIn++;
     }
     for (let i = 0; i < Math.min(newOutputRefs.length, outHeads.length); i++) {
       const r = await this.writeApi.getBytes(
@@ -380,6 +460,7 @@ export class GraphEditorService {
         `rewire out: ${newOutputRefs[i]} → ${outHeads[i]}`
       );
       calls.push(rec(`/effect/connect/${newOutputRefs[i]},${outHeads[i]}`, r.ok, r.status));
+      if (r.ok) rewiredOut++;
     }
 
     const saveResult = await this.writeApi.postForm(
@@ -389,6 +470,20 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
+    if ((hadIncoming || hadOutgoing) && rewiredIn === 0 && rewiredOut === 0) {
+      const afterState = await safeInspect(this.pedalboardService, input.bundlepath);
+      return {
+        success: false,
+        notes: [
+          `AUDIO PATH BROKEN: replaced ${input.instanceToReplace} with ${newInstance} but rewired 0 incoming and 0 outgoing connections.`,
+          `The old plugin had ${incomingConns.length} incoming and ${outgoingConns.length} outgoing connections recorded in the bundle, but none were successfully reconnected.`,
+          `Call validate_current_board_audio_path to inspect the current state, then manually repair with add_effect or replace_effect with explicit connections.`
+        ],
+        apiCalls: calls,
+        afterState
+      };
+    }
+
     const afterState = saveResult.ok
       ? await safeInspect(this.pedalboardService, input.bundlepath)
       : null;
@@ -397,7 +492,7 @@ export class GraphEditorService {
       success: saveResult.ok,
       notes: [
         `Replaced ${input.instanceToReplace} with ${newInstance} (${input.newPluginUri}).`,
-        `Rewired ${incomingConns.length} incoming and ${outgoingConns.length} outgoing connections.`,
+        `Rewired ${rewiredIn} incoming and ${rewiredOut} outgoing connections.`,
         saveResult.ok ? "Board saved in-place." : "Board save failed."
       ],
       apiCalls: calls,
@@ -419,7 +514,6 @@ export class GraphEditorService {
     const inspection = await this.pedalboardService.inspectPedalboard(input.bundlepath);
     const calls: GraphEditApiCall[] = [];
 
-    // Validate that the instance exists and resolve its URI for symbol checking.
     const instanceRef = normalizeInstanceRef(input.instance);
     const instancePlugin = inspection.pluginsUsed.find(
       (p) => normalizeInstanceRef(p.instance) === instanceRef
@@ -434,7 +528,6 @@ export class GraphEditorService {
       };
     }
 
-    // Validate parameter symbols before touching the device.
     const ports = await this.pluginService.getPluginPorts(instancePlugin.uri);
     const knownSymbols = new Set(ports.controlInputs.map((p) => p.symbol));
     const unknownSymbols = Object.keys(input.parameters).filter((s) => !knownSymbols.has(s));
@@ -470,7 +563,6 @@ export class GraphEditorService {
 
     const paramNotes: string[] = [];
     for (const [symbol, value] of Object.entries(input.parameters)) {
-      // Path format: /effect/parameter/set//graph/<Instance>/<Symbol> <value>
       const path = `/effect/parameter/set/${uiGraphRef(`${input.instance}/${symbol}`)} ${value}`;
       const r = await this.writeApi.getBytes(path, `set ${symbol}=${value} on ${input.instance}`);
       calls.push(rec(path, r.ok, r.status));
@@ -484,9 +576,6 @@ export class GraphEditorService {
     );
     calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
 
-    // Parameter-only edit: board structure (plugins, connections) is unchanged.
-    // Return the pre-edit inspection as afterState — it still reflects the current plugin
-    // list and wiring, and the parameter changes are confirmed by the per-symbol HTTP status above.
     return {
       success: saveResult.ok,
       notes: [
@@ -509,9 +598,9 @@ export class GraphEditorService {
     confirm: boolean;
   }): Promise<BypassResult> {
     if (!input.confirm)
-      return { success: false, notes: ["confirm must be true to execute bypass toggle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+      return { success: false, unsupported: false, notes: ["confirm must be true to execute bypass toggle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
     if (!this.writeApi)
-      return { success: false, notes: ["Write API not configured. Set MOD_DWARF_ENABLE_WRITE_TOOLS=true."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+      return { success: false, unsupported: false, notes: ["Write API not configured. Set MOD_DWARF_ENABLE_WRITE_TOOLS=true."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
 
     const inspection = await this.pedalboardService.inspectPedalboard(input.bundlepath);
     const instanceRef = normalizeInstanceRef(input.instance);
@@ -520,7 +609,7 @@ export class GraphEditorService {
     );
     if (!exists) {
       const available = inspection.pluginsUsed.map((p) => normalizeInstanceRef(p.instance)).join(", ");
-      return { success: false, notes: [`Instance '${input.instance}' not found. Available: ${available}`], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+      return { success: false, unsupported: false, notes: [`Instance '${input.instance}' not found. Available: ${available}`], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
     }
 
     const calls: GraphEditApiCall[] = [];
@@ -531,12 +620,28 @@ export class GraphEditorService {
       "load bundle for bypass toggle"
     );
     calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
-    if (!loadResult.ok) return { success: false, notes: ["Failed to load bundle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
+    if (!loadResult.ok) return { success: false, unsupported: false, notes: ["Failed to load bundle."], instance: input.instance, bypassed: input.bypassed, persisted: false, afterState: null };
 
-    // MOD firmware bypass endpoint: /effect/bypass//graph/<instance> <true|false>
     const bypassPath = `/effect/bypass/${uiGraphInstancePath(input.instance)} ${input.bypassed ? "true" : "false"}`;
     const bypassResult = await this.writeApi.getBytes(bypassPath, `bypass ${input.instance}: ${input.bypassed}`);
     calls.push(rec(bypassPath, bypassResult.ok, bypassResult.status));
+
+    if (bypassResult.status === 404 || bypassResult.status === 405) {
+      return {
+        success: false,
+        unsupported: true,
+        notes: [
+          `Bypass endpoint not supported on this firmware (HTTP ${bypassResult.status}): ${bypassPath}`,
+          `The MOD Dwarf on this firmware version does not expose an HTTP bypass toggle.`,
+          `Alternatives: (1) Use activate_snapshot to switch between snapshots with different parameter states. (2) Use set_effect_parameter to approximate off-state by setting the plugin's wet/mix/drive parameters to minimum — this is NOT true bypass; signal processing still runs.`,
+          `Real bypass (the LED button on the device) can only be toggled via the MOD web UI or WebSocket protocol, not via HTTP on this firmware.`
+        ],
+        instance: input.instance,
+        bypassed: input.bypassed,
+        persisted: false,
+        afterState: null
+      };
+    }
 
     let persisted = false;
     if (input.persist && bypassResult.ok) {
@@ -553,6 +658,7 @@ export class GraphEditorService {
 
     return {
       success: bypassResult.ok,
+      unsupported: false,
       notes: [
         bypassResult.ok
           ? `${input.instance} is now ${input.bypassed ? "bypassed" : "active"}.`
@@ -597,7 +703,6 @@ export class GraphEditorService {
     if (!loadResult.ok)
       return { success: false, notes: ["Failed to load bundle."], snapshotName: input.snapshotName, afterState: null };
 
-    // MOD firmware snapshot endpoint. The name is URL-encoded.
     const encoded = encodeURIComponent(snapshot.name);
     const snapPath = `/snapshot/load?name=${encoded}`;
     const snapResult = await this.writeApi.getBytes(snapPath, `activate snapshot "${snapshot.name}"`);
@@ -633,7 +738,6 @@ export class GraphEditorService {
       return { success: false, notes: ["Could not read source bundle files."], apiCalls: [] };
     }
 
-    // Replace title in both TTL files.
     const escapedTitle = input.newTitle.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     const newManifest = rawFiles.manifestText.replace(
       /doap:name\s+"[^"]*"/,
@@ -644,7 +748,6 @@ export class GraphEditorService {
       `doap:name "${escapedTitle}"`
     );
 
-    // Build new bundle folder name from title slug.
     const slug = input.newTitle
       .normalize("NFKD")
       .replace(/[̀-ͯ]/g, "")
@@ -653,7 +756,6 @@ export class GraphEditorService {
     const newFolderName = `${slug}.pedalboard`;
     const mainTtlFileName = rawFiles.mainTtlFileName ?? `${slug}.ttl`;
 
-    // Write to local temp dir and package as tar.gz.
     const tempDir = join(tmpdir(), `mod-dwarf-mcp-dup-${Date.now()}`);
     await mkdir(join(tempDir, newFolderName), { recursive: true });
 
@@ -682,7 +784,6 @@ export class GraphEditorService {
     if (!importResult.ok)
       return { success: false, notes: [`Import failed: HTTP ${importResult.status}`], apiCalls: calls };
 
-    // Activate the imported bundle from /tmp.
     const tmpBundlePath = `/tmp/pedalboards/${newFolderName}`;
     const loadResult = await this.writeApi.postForm(
       "/pedalboard/load_bundle/",
@@ -693,7 +794,6 @@ export class GraphEditorService {
     if (!loadResult.ok)
       return { success: false, notes: ["Duplicate imported but failed to activate."], apiCalls: calls };
 
-    // Save as new permanent board.
     const saveResult = await this.writeApi.postForm(
       "/pedalboard/save",
       { title: input.newTitle, asNew: 1 },
@@ -710,6 +810,190 @@ export class GraphEditorService {
       newTitle: saveResult.ok ? input.newTitle : undefined,
       newBundlePath: saveResult.ok ? newBundlePath : undefined,
       apiCalls: calls
+    };
+  }
+
+  // ─── validate_audio_path ─────────────────────────────────────────────────────
+
+  async validateAudioPath(bundlepath: string): Promise<AudioPathValidationResult> {
+    const inspection = await this.pedalboardService.inspectPedalboard(bundlepath);
+    const connections = inspection.connections;
+    const plugins = inspection.pluginsUsed;
+
+    const captureRe = /^\/graph\/capture_\d+$/;
+    const playbackRe = /^\/graph\/playback_\d+$/;
+
+    const pluginInstances = new Set(plugins.map(p => normalizeInstanceRef(p.instance)));
+
+    function nodeOf(portRef: string): string {
+      const parts = portRef.split("/");
+      if (parts.length <= 3) return portRef;
+      return `/${parts[1]}/${parts[2]}`;
+    }
+
+    const edges = new Map<string, Set<string>>();
+    for (const conn of connections) {
+      const from = nodeOf(conn.tail);
+      const to = nodeOf(conn.head);
+      if (!edges.has(from)) edges.set(from, new Set());
+      edges.get(from)!.add(to);
+    }
+
+    const captureNodes = [...new Set(connections.map(c => nodeOf(c.tail)).filter(n => captureRe.test(n)))];
+    const visited = new Set<string>(captureNodes);
+    const queue = [...captureNodes];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      for (const next of edges.get(node) ?? []) {
+        if (!visited.has(next)) { visited.add(next); queue.push(next); }
+      }
+    }
+
+    const playbackNodes = [...new Set(connections.map(c => nodeOf(c.head)).filter(n => playbackRe.test(n)))];
+    const hasCapture = captureNodes.length > 0;
+    const hasPlayback = playbackNodes.length > 0;
+    const reachesPlayback = playbackNodes.some(p => visited.has(p));
+
+    const chainPlugins = plugins.map(p => normalizeInstanceRef(p.instance)).filter(i => visited.has(i));
+    const orphanPlugins = plugins.map(p => normalizeInstanceRef(p.instance)).filter(i => !visited.has(i));
+
+    const notes: string[] = [];
+    if (!hasCapture) notes.push("No capture (hardware input) ports found in connections.");
+    if (!hasPlayback) notes.push("No playback (hardware output) ports found in connections.");
+    if (!reachesPlayback) notes.push("Audio does not reach playback ports — signal chain is broken.");
+    if (orphanPlugins.length > 0) notes.push(`Orphan plugins (not in audio path): ${orphanPlugins.join(", ")}`);
+    if (reachesPlayback && orphanPlugins.length === 0) notes.push("Audio path is valid: all plugins are connected capture → playback.");
+
+    return {
+      bundlepath,
+      valid: reachesPlayback && orphanPlugins.length === 0,
+      hasCapture,
+      hasPlayback,
+      reachesPlayback,
+      chainPlugins,
+      orphanPlugins,
+      notes,
+      inspection
+    };
+  }
+
+  // ─── remove_orphan_effects ───────────────────────────────────────────────────
+
+  async removeOrphanEffects(input: {
+    bundlepath: string;
+    confirm: boolean;
+  }): Promise<GraphEditResult> {
+    if (!input.confirm) return notConfirmed();
+    if (!this.writeApi) return noWriteApi();
+
+    const validation = await this.validateAudioPath(input.bundlepath);
+    if (validation.orphanPlugins.length === 0) {
+      return {
+        success: true,
+        notes: ["No orphan plugins found. Audio path is valid."],
+        apiCalls: [],
+        afterState: validation.inspection
+      };
+    }
+
+    const calls: GraphEditApiCall[] = [];
+    const loadResult = await this.writeApi.postForm("/pedalboard/load_bundle/", { bundlepath: input.bundlepath }, "load bundle for orphan removal");
+    calls.push(rec("/pedalboard/load_bundle/", loadResult.ok, loadResult.status));
+    if (!loadResult.ok) return fail("Failed to load bundle.", calls);
+
+    for (const orphan of validation.orphanPlugins) {
+      const removePath = `/effect/remove/${uiGraphInstancePath(orphan)}`;
+      const r = await this.writeApi.getBytes(removePath, `remove orphan ${orphan}`);
+      calls.push(rec(removePath, r.ok, r.status));
+    }
+
+    const saveResult = await this.writeApi.postForm("/pedalboard/save", { title: validation.inspection.title ?? "Modified Board", asNew: 0 }, "save after orphan removal");
+    calls.push(rec("/pedalboard/save", saveResult.ok, saveResult.status));
+
+    const afterState = saveResult.ok ? await safeInspect(this.pedalboardService, input.bundlepath) : null;
+    return {
+      success: saveResult.ok,
+      notes: [
+        `Removed ${validation.orphanPlugins.length} orphan plugin(s): ${validation.orphanPlugins.join(", ")}`,
+        saveResult.ok ? "Board saved in-place." : "Save failed."
+      ],
+      apiCalls: calls,
+      afterState
+    };
+  }
+
+  // ─── cleanup_snapshot_references ─────────────────────────────────────────────
+
+  async cleanupSnapshotReferences(input: {
+    bundlepath: string;
+    removedInstance: string;
+    confirm: boolean;
+  }): Promise<{ success: boolean; notes: string[]; snapshotsUpdated: boolean }> {
+    if (!input.confirm) return { success: false, notes: ["confirm must be true."], snapshotsUpdated: false };
+    if (!this.sshClient) return { success: false, notes: ["SSH not configured."], snapshotsUpdated: false };
+
+    const rawFiles = await this.pedalboardService.readBundleFiles(input.bundlepath);
+    if (!rawFiles.snapshotsText) {
+      return { success: true, notes: ["No snapshots.json found — nothing to clean."], snapshotsUpdated: false };
+    }
+
+    let snapshots: unknown;
+    try {
+      snapshots = JSON.parse(rawFiles.snapshotsText);
+    } catch {
+      return { success: false, notes: ["Could not parse snapshots.json."], snapshotsUpdated: false };
+    }
+
+    const bare = input.removedInstance.replace(/^\/graph\//, "").replace(/^\//, "");
+    const refPatterns = [bare, `/graph/${bare}`, `/${bare}`];
+
+    function removeInstanceRefs(obj: unknown): unknown {
+      if (Array.isArray(obj)) return obj.map(removeInstanceRefs);
+      if (obj && typeof obj === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (refPatterns.some(p => k === p)) continue;
+          result[k] = removeInstanceRefs(v);
+        }
+        return result;
+      }
+      return obj;
+    }
+
+    const cleaned = removeInstanceRefs(snapshots);
+    const newText = JSON.stringify(cleaned, null, 2);
+
+    if (newText === rawFiles.snapshotsText) {
+      return { success: true, notes: [`No references to ${input.removedInstance} found in snapshots.json.`], snapshotsUpdated: false };
+    }
+
+    try {
+      await this.sshClient.sshWriteFile(`${input.bundlepath}/snapshots.json`, newText);
+      return { success: true, notes: [`Removed references to ${input.removedInstance} from snapshots.json.`], snapshotsUpdated: true };
+    } catch (err) {
+      return { success: false, notes: [`SSH write failed: ${err instanceof Error ? err.message : String(err)}`], snapshotsUpdated: false };
+    }
+  }
+
+  // ─── check_bypass_support ────────────────────────────────────────────────────
+
+  async checkBypassSupport(): Promise<{ supported: boolean; notes: string[]; probeResult: { httpStatus: number; path: string } | null }> {
+    if (!this.writeApi) {
+      return { supported: false, notes: ["Write API not configured."], probeResult: null };
+    }
+    const probePath = `/effect/bypass//graph/__bypass_probe__ true`;
+    const result = await this.writeApi.getBytes(probePath, "probe bypass endpoint support");
+    if (result.status === 404 || result.status === 405) {
+      return {
+        supported: false,
+        notes: [`HTTP bypass endpoint not supported on this firmware (HTTP ${result.status}). Use snapshot-based parameter switching instead.`],
+        probeResult: { httpStatus: result.status, path: probePath }
+      };
+    }
+    return {
+      supported: true,
+      notes: [`HTTP bypass endpoint responded with HTTP ${result.status} — endpoint exists.`],
+      probeResult: { httpStatus: result.status, path: probePath }
     };
   }
 }
@@ -772,4 +1056,16 @@ function noWriteApi(): GraphEditResult {
     apiCalls: [],
     afterState: null
   };
+}
+
+function parseAddPosition(position: string):
+  | { type: "first" | "last" }
+  | { type: "after" | "before"; instance: string } {
+  if (position === "first") return { type: "first" };
+  if (position === "last") return { type: "last" };
+  const afterMatch = /^after:(.+)$/.exec(position);
+  if (afterMatch) return { type: "after", instance: normalizeInstanceRef(afterMatch[1].trim()) };
+  const beforeMatch = /^before:(.+)$/.exec(position);
+  if (beforeMatch) return { type: "before", instance: normalizeInstanceRef(beforeMatch[1].trim()) };
+  return { type: "last" };
 }

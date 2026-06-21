@@ -743,7 +743,7 @@ Workflow: `search_plugins` (find URI) → `list_pedalboards` (get bundlepath) �
 | `bundlepath` | `string` | yes | Bundle path from `list_pedalboards`. |
 | `pluginUri` | `string` | yes | Exact LV2 URI from `list_plugins` or `search_plugins`. |
 | `instanceName` | `string` | no | Instance name slug (e.g. `"MyReverb"`). Derived from URI if omitted. |
-| `position` | `"first"` \| `"last"` | no (default `"last"`) | Where in the chain to insert. |
+| `position` | `string` | no (default `"last"`) | `"first"`, `"last"`, `"after:<instance>"`, or `"before:<instance>"`. Instance names from `inspect_pedalboard`. |
 | `confirm` | `boolean` | yes | `true` to execute. |
 
 #### Output → `GraphEditResult`
@@ -800,7 +800,18 @@ Workflow: `inspect_pedalboard` (find `instanceToReplace`) → `search_plugins` (
 
 #### Output → `GraphEditResult`
 
-Same shape as `add_effect`.
+Same shape as `add_effect`, with additional rewire counts in `notes`.
+
+**⚠️ Critical:** If the replaced plugin had incoming or outgoing connections but `success=false` is returned, zero connections were rewired — the audio path is broken. The new plugin is present in the graph but disconnected. Immediately call `validate_current_board_audio_path` to assess the state and `remove_orphan_effects` to clean up, then re-insert with `add_effect` using a positional argument.
+
+```jsonc
+{
+  "success": false,
+  "notes": ["AUDIO PATH BROKEN: plugin had connections but 0 were rewired. Run validate_current_board_audio_path."],
+  "apiCalls": [ /* ... */ ],
+  "afterState": { /* ... */ }
+}
+```
 
 ---
 
@@ -829,7 +840,9 @@ Same shape as `add_effect`. On symbol error, `success: false` and `notes` lists 
 
 Bypass (disable) or enable a plugin in the live graph. By default, the bypass state is live only (resets on next board load). Set `persist: true` to save it into the bundle.
 
-Workflow: `inspect_pedalboard` (instance name) → `toggle_effect_bypass`.
+> **⚠️ Firmware limitation:** On MOD Dwarf firmware v1.13.5.3315 and similar, the `/effect/bypass` HTTP endpoint returns 404. `toggle_effect_bypass` will return `unsupported=true` on these versions. Call `check_bypass_support` before relying on this tool. Do NOT simulate bypass by zeroing parameters — that is not real bypass.
+
+Workflow: `check_bypass_support` (one-time per session) → `inspect_pedalboard` (instance name) → `toggle_effect_bypass`.
 
 #### Input
 
@@ -843,6 +856,7 @@ Workflow: `inspect_pedalboard` (instance name) → `toggle_effect_bypass`.
 
 #### Output → `BypassResult`
 
+**Success case:**
 ```jsonc
 {
   "success": true,
@@ -850,7 +864,24 @@ Workflow: `inspect_pedalboard` (instance name) → `toggle_effect_bypass`.
   "instance": "reverb_3",
   "bypassed": true,
   "persisted": false,
+  "unsupported": false,
   "afterState": { /* full PedalboardInspection */ }
+}
+```
+
+**Unsupported firmware case:**
+```jsonc
+{
+  "success": false,
+  "unsupported": true,
+  "notes": [
+    "Bypass endpoint not supported on this firmware (HTTP 404).",
+    "Alternatives: (1) activate_snapshot to switch between snapshots with/without this effect; (2) remove_effect to permanently remove it."
+  ],
+  "instance": "reverb_3",
+  "bypassed": false,
+  "persisted": false,
+  "afterState": null
 }
 ```
 
@@ -1156,6 +1187,135 @@ Add TinyGain Mono and Bollie Delay, connect them, verify via WebSocket, disconne
 #### Output
 
 Same shape as `run_live_graph_experiment` → `LiveGraphExperimentResult` (extended with connection phase states in the `websocket` field).
+
+---
+
+## Audio Path Validation
+
+### `validate_current_board_audio_path`
+
+**Type:** Read-only (SSH)
+
+BFS scan of the audio connection graph starting from hardware capture ports. Identifies plugins in the active audio chain (`chainPlugins`) versus plugins present in the graph but not connected to the signal path (`orphanPlugins`).
+
+Call after `replace_effect` returns `success=false`, or any time you suspect the signal chain is broken.
+
+#### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bundlepath` | `string` | yes | Bundle path from `list_pedalboards`. |
+
+#### Output → `AudioPathValidationResult`
+
+```jsonc
+{
+  "broken": false,
+  "path": ["capture_1", "DS1", "Reverb", "playback_1"],
+  "chainPlugins": [
+    { "instance": "DS1", "uri": "http://..." },
+    { "instance": "Reverb", "uri": "http://..." }
+  ],
+  "orphanPlugins": [],
+  "notes": ["Audio path is intact. 2 plugins in chain, 0 orphans."]
+}
+```
+
+**Broken chain example:**
+```jsonc
+{
+  "broken": true,
+  "path": ["capture_1", "DS1"],
+  "chainPlugins": [{ "instance": "DS1", "uri": "http://..." }],
+  "orphanPlugins": [{ "instance": "BigMuff", "uri": "http://..." }],
+  "notes": ["AUDIO PATH BROKEN: BigMuff is present in the graph but not connected to capture_1 or playback_1."]
+}
+```
+
+---
+
+### `remove_orphan_effects`
+
+**Type:** Write-gated (HTTP + SSH)
+
+Remove all plugins identified as orphans by `validate_current_board_audio_path` from the live graph and save in-place. Use with `confirm: false` for a dry run that reports what would be removed without touching the board.
+
+#### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bundlepath` | `string` | yes | Bundle path. |
+| `confirm` | `boolean` | yes | `true` to remove. `false` for dry run (list orphans only). |
+
+#### Output → `GraphEditResult`
+
+```jsonc
+{
+  "success": true,
+  "notes": ["Removed orphan: BigMuff", "Saved board in-place."],
+  "apiCalls": [
+    { "path": "/effect/remove//graph/BigMuff", "status": "success", "httpStatus": 200 }
+  ],
+  "afterState": { /* PedalboardInspection */ }
+}
+```
+
+---
+
+### `check_bypass_support`
+
+**Type:** Guard-only (no live probe)
+
+Check whether the HTTP bypass endpoint (`/effect/bypass`) is available on this firmware. Returns `supported=false` without making a live request (the firmware hangs on unknown instance names for this endpoint). Use the `notes` field for guidance on alternatives.
+
+> **Note:** The only reliable way to confirm bypass works is to call `toggle_effect_bypass` on a known valid instance. `check_bypass_support` is a static firmware guard — if `writeApi` is unavailable or the endpoint is known-unsupported, it returns `supported=false`.
+
+#### Input
+
+None.
+
+#### Output → `BypassSupportResult`
+
+```jsonc
+{
+  "supported": false,
+  "notes": [
+    "Cannot probe bypass endpoint: writeApi not available.",
+    "Alternative: call toggle_effect_bypass on a real instance — check unsupported field in the result.",
+    "If unsupported=true: use activate_snapshot to switch between snapshots with/without the effect."
+  ],
+  "probeResult": null
+}
+```
+
+---
+
+### `cleanup_snapshot_references`
+
+**Type:** Write-gated (SSH)
+
+After removing a plugin with `remove_effect` or `replace_effect`, this tool reads `snapshots.json` via SSH, removes all entries that reference the removed instance, and writes the file back. Prevents stale snapshot data from causing issues when the board is reloaded.
+
+Requires an active SSH connection to the device.
+
+#### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bundlepath` | `string` | yes | Bundle path of the affected board. |
+| `removedInstance` | `string` | yes | Instance name that was removed (e.g. `"TAP_ChorFlng"`). |
+| `confirm` | `boolean` | yes | `true` to write. `false` for dry run (shows what would be removed). |
+
+#### Output
+
+```jsonc
+{
+  "success": true,
+  "removedInstance": "TAP_ChorFlng",
+  "snapshotsModified": 2,
+  "notes": ["Removed 'TAP_ChorFlng' from 2 snapshot entries in snapshots.json."]
+}
+```
 
 ---
 
