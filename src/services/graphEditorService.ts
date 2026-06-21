@@ -50,6 +50,8 @@ export interface DuplicateBoardResult {
 export interface AudioPathValidationResult {
   bundlepath: string;
   valid: boolean;
+  broken: boolean;
+  path: string[];
   hasCapture: boolean;
   hasPlayback: boolean;
   reachesPlayback: boolean;
@@ -826,9 +828,13 @@ export class GraphEditorService {
     const pluginInstances = new Set(plugins.map(p => normalizeInstanceRef(p.instance)));
 
     function nodeOf(portRef: string): string {
-      const parts = portRef.split("/");
-      if (parts.length <= 3) return portRef;
-      return `/${parts[1]}/${parts[2]}`;
+      if (portRef.startsWith("/graph/")) {
+        const parts = portRef.split("/");
+        return parts.length <= 3 ? portRef : `/${parts[1]}/${parts[2]}`;
+      }
+      const slashIdx = portRef.indexOf("/");
+      const bare = slashIdx === -1 ? portRef : portRef.substring(0, slashIdx);
+      return `/graph/${bare}`;
     }
 
     const edges = new Map<string, Set<string>>();
@@ -867,6 +873,8 @@ export class GraphEditorService {
     return {
       bundlepath,
       valid: reachesPlayback && orphanPlugins.length === 0,
+      broken: !reachesPlayback || orphanPlugins.length > 0,
+      path: chainPlugins,
       hasCapture,
       hasPlayback,
       reachesPlayback,

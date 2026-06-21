@@ -291,7 +291,7 @@ function recipeSnapshotToPlan(snapshot: EffectRecipe["snapshots"][number]): Plan
     name: snapshot.name,
     description: snapshot.description,
     parameterFocus: Object.fromEntries(
-      Object.entries(snapshot.effectFocus).map(([key, value]) => [key, stringifyValue(value)])
+      Object.entries(snapshot.effectFocus ?? {}).map(([key, value]) => [key, stringifyValue(value)])
     ),
     ...(snapshot.parameterValues ? { parameterValues: snapshot.parameterValues } : {})
   };
