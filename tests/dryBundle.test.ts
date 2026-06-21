@@ -10,7 +10,7 @@ import { MockRunner } from "./mockRunner.js";
 
 describe("DryBundleService", () => {
   it("generates a complete local dry-run pedalboard bundle", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
     const service = new DryBundleService(pluginService);
     const plan = await planner.planFromPrompt({

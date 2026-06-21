@@ -42,7 +42,7 @@ describe("effectRecipeSchema", () => {
 
 describe("EffectRecipeToPedalboardPlanService", () => {
   it("converts a recipe into a pedalboard plan and reuses snapshots once", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const converter = new EffectRecipeToPedalboardPlanService(
       pluginService,
       { load: async () => null } as never,
@@ -80,7 +80,7 @@ describe("EffectRecipeToPedalboardPlanService", () => {
   });
 
   it("maps Elephant-style recipes to fuzz drive and cabinet without ambient effects", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const converter = new EffectRecipeToPedalboardPlanService(
       pluginService,
       { load: async () => null } as never,
@@ -111,12 +111,12 @@ describe("EffectRecipeToPedalboardPlanService", () => {
 
     expect(plan.signalChain.map((plugin) => plugin.role)).toEqual([
       "fuzz",
-      "high gain drive",
+      "drive",
       "cabinet"
     ]);
     expect(plan.signalChain.map((plugin) => plugin.name)).toEqual([
       "Open Big Muff",
-      "AIDA-X",
+      "GxTubeScreamer",
       "Vintage Cabinets"
     ]);
     expect(plan.snapshots.map((snapshot) => snapshot.name)).toEqual(["Main Riff", "Lead"]);

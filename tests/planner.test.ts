@@ -9,7 +9,7 @@ import { MockRunner } from "./mockRunner.js";
 
 describe("PedalboardPlannerService", () => {
   it("returns a dry-run plan using only installed plugins", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -26,7 +26,7 @@ describe("PedalboardPlannerService", () => {
       modifiesDevice: false,
       callsPostEndpoints: false
     });
-    expect(plan.availablePluginCount).toBe(10);
+    expect(plan.availablePluginCount).toBe(33);
     expect(plan.template).toBeNull();
     expect(plan.signalChain.length).toBeGreaterThan(0);
 
@@ -39,7 +39,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("special-cases Tame Impala Let It Happen snapshots", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -65,7 +65,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("treats Elephant as fuzz plus drive plus cabinet", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -89,7 +89,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("handles U2 New Year's Day with clean chorus delay and reverb roles", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -108,7 +108,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("handles Comfortably Numb with compression, drive, delay and reverb", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -125,7 +125,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("handles Master of Puppets as high gain drive plus cabinet", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -144,7 +144,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("handles Sigur Ros ambient as delay, reverb and modulation", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -165,7 +165,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("handles Khruangbin as clean, compressed and modulated", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -182,7 +182,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("decides a new board mode for explicit creation requests", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -195,7 +195,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("decides parameter-only mode for knob tweak requests", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({
@@ -208,7 +208,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("builds a valid high-gain board without generic cab guesses", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
     const live = new LiveGraphAuthoringPlanService(pluginService);
 
@@ -228,7 +228,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("keeps noisy self-oscillating delay requests on a safe feedback profile", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
     const live = new LiveGraphAuthoringPlanService(pluginService);
 
@@ -246,7 +246,7 @@ describe("PedalboardPlannerService", () => {
   });
 
   it("avoids duplicate TinyGain Mono stages on a clean funk prompt", async () => {
-    const pluginService = new PluginService(null, pluginCatalog);
+    const pluginService = new PluginService(null, pluginCatalog, null);
     const planner = new PedalboardPlannerService(pluginService);
 
     const plan = await planner.planFromPrompt({

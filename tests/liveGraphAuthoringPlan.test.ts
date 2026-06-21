@@ -318,7 +318,7 @@ describe("LiveGraphAuthoringPlanService", () => {
   });
 
   it("keeps ZamComp attack and release inside real device ranges", async () => {
-    const pluginService = new PluginService(null, [zamCompEntry()]);
+    const pluginService = new PluginService(null, [zamCompEntry()], null);
     const service = new LiveGraphAuthoringPlanService(pluginService);
 
     const valid = manualPlan({

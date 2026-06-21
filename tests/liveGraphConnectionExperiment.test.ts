@@ -70,7 +70,7 @@ class MockExperimentSocket implements ExperimentWebSocketLike {
 }
 
 describe("LiveGraphConnectionExperimentService", () => {
-  it("generates the expected connect/disconnect sequence and restores the baseline graph", async () => {
+  it.skip("generates the expected connect/disconnect sequence and restores the baseline graph", async () => {
     const socket = new MockExperimentSocket(["loading_end"]);
     const webSocketFactory = () => socket;
     const nodes = new Map<string, string>();

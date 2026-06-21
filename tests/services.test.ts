@@ -8,7 +8,7 @@ import { MockRunner } from "./mockRunner.js";
 
 describe("services with mocked SSH", () => {
   it("lists plugins without a real device", async () => {
-    const service = new PluginService(new MockRunner());
+    const service = new PluginService(new MockRunner(), [], null);
     const result = await service.listPlugins("both");
     expect(result.count).toBe(2);
     expect(result.plugins[0].name).toBe("Gain");

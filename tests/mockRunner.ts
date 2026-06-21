@@ -45,6 +45,14 @@ export class MockRunner implements CommandRunner {
         ].join("\n") + "\n"
       );
     }
+    if (command.startsWith("grep -r 'doap:name' '/root/.pedalboards'")) {
+      return ok(
+        [
+          '/root/.pedalboards/Dave.pedalboard/Dave.ttl:    doap:name "Dave" .',
+          '/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard/AI_TEST_DO_NOT_U.ttl:    doap:name "AI_TEST_DO_NOT_USE" ;'
+        ].join("\n") + "\n"
+      );
+    }
     if (command.includes("/usr/share/mod/pedalboards") && command.startsWith("find "))
       return ok("/usr/share/mod/default.pedalboard\n");
     if (command.includes("/root/.lv2") && command.startsWith("find "))

@@ -16,6 +16,7 @@ class MockWriteApi {
     private readonly options: {
       exportOk?: boolean;
       importOk?: boolean;
+      pluginUris?: string[];
     } = {}
   ) {}
 
@@ -41,12 +42,11 @@ class MockWriteApi {
     purpose: string
   ): Promise<{ ok: boolean; status: number; value: T; text: string }> {
     this.calls.push({ method: "GET", path, purpose, status: "success", httpStatus: 200 });
-    const value = {
-      plugins: [
-        { uri: "http://moddevices.com/plugins/mod-devel/Gain" },
-        { uri: "http://distrho.sf.net/plugins/MVerb" }
-      ]
-    } as T;
+    const uris = this.options.pluginUris ?? [
+      "http://moddevices.com/plugins/mod-devel/Gain",
+      "http://distrho.sf.net/plugins/MVerb"
+    ];
+    const value = { plugins: uris.map((uri) => ({ uri })) } as T;
     return { ok: true, status: 200, value, text: JSON.stringify(value) };
   }
 
@@ -96,7 +96,7 @@ class MockWriteApi {
 
 async function createBundle() {
   const runner = new MockRunner();
-  const pluginService = new PluginService(runner);
+  const pluginService = new PluginService(runner, [], null);
   const pedalboardService = new PedalboardService(runner);
   const planner = new PedalboardPlannerService(pluginService);
   const dryBundleService = new DryBundleService(pluginService);
@@ -105,7 +105,9 @@ async function createBundle() {
     instrument: "guitar",
     goals: ["wide reverb", "simple gain staging"]
   });
-  return { dryBundle: await dryBundleService.createDryBundle(plan), pedalboardService };
+  const dryBundle = await dryBundleService.createDryBundle(plan);
+  const pluginUris = plan.signalChain.map((p) => p.uri).filter((uri): uri is string => Boolean(uri));
+  return { dryBundle, pedalboardService, pluginUris };
 }
 
 describe("ImportBundleService", () => {
@@ -134,8 +136,8 @@ describe("ImportBundleService", () => {
   });
 
   it("exports a backup before importing when the target name exists", async () => {
-    const { dryBundle, pedalboardService } = await createBundle();
-    const api = new MockWriteApi({ exportOk: true, importOk: true });
+    const { dryBundle, pedalboardService, pluginUris } = await createBundle();
+    const api = new MockWriteApi({ exportOk: true, importOk: true, pluginUris });
     const service = new ImportBundleService(pedalboardService, api as never, true);
 
     const result = await service.importDryBundle({ dryBundle, confirm: true, targetName: "Dave" });

@@ -268,7 +268,7 @@ export class PedalboardPlannerService {
       return dedupeRoles([
         {
           role: "fuzz",
-          preferred: ["Big Muff", "GxSuperFuzz", "Fuzz", "GxFuzzFaceFullerMod"],
+          preferred: ["Open Big Muff", "Big Muff", "GxSuperFuzz", "GxFuzzFaceFullerMod"],
           reason: "Core fuzzy riff texture for Elephant.",
           requiresProfile: false
         },
@@ -298,7 +298,7 @@ export class PedalboardPlannerService {
         },
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Rhythmic echo support for the spacious parts.",
           requiresProfile: true
         },
@@ -327,7 +327,7 @@ export class PedalboardPlannerService {
         },
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Spacious repeats for the solo lines.",
           requiresProfile: true
         },
@@ -356,7 +356,7 @@ export class PedalboardPlannerService {
       return dedupeRoles([
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Long, spacious repeats for the ambient bed.",
           requiresProfile: true
         },
@@ -414,7 +414,7 @@ export class PedalboardPlannerService {
         },
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Optional delay for lead textures and rhythmic accents.",
           requiresProfile: true
         }
@@ -431,7 +431,7 @@ export class PedalboardPlannerService {
         },
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Long repeats and diffusion for the wash.",
           requiresProfile: true
         },
@@ -500,7 +500,7 @@ export class PedalboardPlannerService {
         },
         {
           role: "delay",
-          preferred: ["TAP Stereo Echo", "Bollie Delay", "MDA DubDelay", "Delay Munge ST"],
+          preferred: ["Bollie Delay", "TAP Stereo Echo", "MDA DubDelay", "Delay Munge ST"],
           reason: "Long delay support for the lead lines.",
           requiresProfile: true
         },
