@@ -21,7 +21,7 @@ Two details mattered:
 
 - Kept the tool registry explicit in `src/server/toolRegistry.ts`.
 - Added a standardized description prefix for each tool so discovery has stable, searchable tool text.
-- Bumped the server/package version to force cache invalidation in clients that key off the server signature.
+- Bumped the server/package version and tied the MCP `version` string to a fingerprint of the registered tool set, so caches invalidate automatically when the registry changes.
 - Updated `docs/TOOL_REFERENCE.md` to match the actual tool count.
 
 ## Verification Steps
@@ -50,5 +50,5 @@ codex mcp add mod_dwarf_mcp --env MOD_DWARF_ENABLE_WRITE_TOOLS=true --env MOD_DW
 
 ## Notes
 
-- The server version was bumped to `0.1.2` during this fix.
+- The server version was bumped to `0.1.3` during this fix, with a tool-registry fingerprint suffix.
 - The main workaround was not to trust the discovery cache alone when the runtime server and source tree disagree.

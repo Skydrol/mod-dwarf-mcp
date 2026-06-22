@@ -1,5 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { SshClient } from "../clients/sshClient.js";
 import type { HttpClient } from "../clients/httpClient.js";
 import type { WriteHttpClient } from "../clients/writeHttpClient.js";
@@ -39,10 +42,20 @@ export interface ServerDependencies {
   websocketUrl: string;
 }
 
+function getServerVersion(): string {
+  const registryJsPath = fileURLToPath(new URL("./toolRegistry.js", import.meta.url));
+  const registryPath = existsSync(registryJsPath)
+    ? registryJsPath
+    : fileURLToPath(new URL("./toolRegistry.ts", import.meta.url));
+  const registrySource = readFileSync(registryPath, "utf8");
+  const registryFingerprint = createHash("sha1").update(registrySource).digest("hex").slice(0, 12);
+  return `0.1.3+${registryFingerprint}`;
+}
+
 export function createMcpServer(deps: ServerDependencies): McpServer {
   const server = new McpServer({
     name: "mod-dwarf-mcp",
-    version: "0.1.2"
+    version: getServerVersion()
   });
 
   const pluginService = new PluginService(deps.ssh, pluginCatalog);
