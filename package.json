@@ -1,7 +1,7 @@
 {
   "name": "mod-dwarf-mcp",
   "version": "0.1.2",
-  "description": "Read-only MCP server for inspecting MOD Dwarf pedalboards, plugins, snapshots, and banks.",
+  "description": "Experimental MCP server for inspecting, creating, and editing MOD Dwarf pedalboards with AI agents.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
