@@ -1,8 +1,39 @@
 # mod-dwarf-mcp
 
-MCP server for the MOD Dwarf pedalboard platform.
+Experimental MCP server for the MOD Dwarf pedalboard platform.
 
-The server inspects a MOD Dwarf over SSH and HTTP. It includes write-gated, opt-in tools for pedalboard creation and management (disabled by default). For structured creation, `create_pedalboard_from_recipe` is the recommended entry point.
+This project lets AI agents inspect a connected MOD Dwarf, discover installed LV2 plugins, create structured pedalboard recipes, apply live graph changes, save pedalboards, and perform guarded surgical edits such as adding, removing, replacing, or tweaking effects.
+
+> [!WARNING]
+> **Alpha software. Tested primarily on one MOD Dwarf running firmware v1.13.5.3315.**
+>
+> Write tools can modify the connected device. They are disabled by default and require both `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and `confirm=true` in tool input. Back up important pedalboards before enabling writes.
+
+This is an unofficial community project. It is not affiliated with or endorsed by MOD Audio.
+
+---
+
+## Status
+
+Current status: **public alpha / experimental**.
+
+What works today:
+
+- Read MOD Dwarf device info, banks, pedalboards, snapshots, and installed plugins.
+- Build recipe-driven pedalboards from structured `EffectRecipe` input.
+- Apply and save new pedalboards through MOD UI HTTP endpoints.
+- Search installed plugins and inspect exact LV2 parameter symbols/ranges.
+- Perform guarded surgical edits: add, remove, replace, parameter set, duplicate, snapshot activation.
+- Validate audio paths and remove orphan effects after graph edits.
+- Detect firmware support for bypass before attempting bypass toggles.
+
+Known limitations:
+
+- The MCP is not a tone-research engine. The user-facing AI must decide the musical intent and provide an explicit recipe.
+- Bypass support depends on firmware. Call `check_bypass_support` before `toggle_effect_bypass`.
+- Snapshot-level effect on/off is not guaranteed on all firmware. Parameter fallback may be needed.
+- MIDI-controller and instrument-plugin workflows are not the primary supported path yet; the current graph builder is audio-chain oriented.
+- Always inspect `afterState` after write tools.
 
 ---
 
@@ -10,168 +41,184 @@ The server inspects a MOD Dwarf over SSH and HTTP. It includes write-gated, opt-
 
 **This MCP server is not the musical intelligence layer. It is the execution and translation layer.**
 
-```
+```text
 User prompt
-  └─ User's AI agent
-       ├─ interprets musical intent
-       ├─ researches the target tone (artist, song, genre)
-       ├─ decides which effects are needed
-       ├─ decides snapshots and section structure
-       ├─ looks up installed plugins via list_plugins / search_plugins
-       └─ produces a structured EffectRecipe
-           └─ MCP server
-                ├─ validates the recipe shape
-                ├─ maps effect roles to installed plugins
-                ├─ generates a PedalboardPlan
-                ├─ applies and saves to the MOD Dwarf
-                └─ reports what happened
+  -> User-facing AI agent
+       -> interprets musical intent
+       -> researches the target tone when needed
+       -> decides effects, plugin choices, settings, snapshots, and sections
+       -> looks up installed plugins via list_plugins / search_plugins
+       -> produces a structured EffectRecipe
+            -> MCP server
+                 -> validates the recipe shape
+                 -> maps effect roles to installed plugins
+                 -> generates a PedalboardPlan
+                 -> applies and saves to the MOD Dwarf
+                 -> reports what happened
 ```
 
 The MCP is the **hand** that operates the MOD Dwarf. The user's AI agent is the **brain** that decides what to play.
 
 ### What the MCP does NOT do
 
-- It does not know how Nirvana, Tame Impala, or U2 sound.
+- It does not know how Nirvana, Tame Impala, U2, or any artist sounds.
 - It does not decide which effects a song needs.
 - It does not replace the user's AI model as the musical reasoning layer.
 - It does not invent musical intent when the `EffectRecipe` is explicit.
-- It does not have a separate creation path outside the safe executor.
 - It should not be expected to autonomously research tone or style.
 
-Any song-specific logic currently present in the codebase (e.g., template matching) is a compatibility shim, not the intended long-term design. The right design is: the AI agent decides, the MCP executes.
+Any song-specific logic currently present in the codebase is a compatibility shim, not the intended long-term design. The right design is: **the AI agent decides, the MCP executes.**
 
-### What the AI agent should do
+---
 
-1. **Understand the user's prompt** — in any language, translate to English first.
-2. **Research the target tone** — use training knowledge or search online for the artist, song, pedal chain, and settings.
-3. **Decide the signal chain** — specific effects (not generic categories), in order.
-4. **Decide snapshots** — name them after song sections (Verse, Chorus, Solo, Bridge).
-5. **Look up installed plugins** — call `list_plugins` or `search_plugins`; find the closest available plugin for each role; never invent a URI.
-6. **Produce a structured `EffectRecipe`** — with explicit `preferredPluginUri` for each effect, `parameters` for key values, and `parameterValues` per snapshot if needed.
-7. **Call `create_pedalboard_from_recipe`** — let the MCP handle validation, wiring, and save.
-8. **Report back to the user** — explain what was created, which plugins were chosen, what each snapshot does.
+## Recommended Workflow
 
-### Example: Tame Impala — Elephant (AI agent's job)
+1. `check_inventory_status`
+2. If missing or stale: `refresh_device_inventory`
+3. `list_plugins` or `search_plugins`
+4. `get_plugin_parameters` for any plugin whose parameters you want to set
+5. User-facing AI builds an explicit `EffectRecipe`
+6. `create_pedalboard_from_recipe`
+7. Inspect the result and verify `afterState` / saved board state
 
-The AI agent researches the tone and produces this recipe. The MCP does not produce this — it only executes it.
+For the full AI-agent workflow, see [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
+For per-tool input/output schemas, see [`docs/TOOL_REFERENCE.md`](docs/TOOL_REFERENCE.md).
+If the Codex tool list looks truncated or stale, see [`docs/TROUBLESHOOTING_MCP_DISCOVERY.md`](docs/TROUBLESHOOTING_MCP_DISCOVERY.md).
+
+---
+
+## Example EffectRecipe
+
+This example uses plugin names and URIs that are expected in the current fallback catalog. For a real device, always call `list_plugins` or `search_plugins` first and use the exact URI returned by the device inventory.
 
 ```json
 {
-  "song": "Elephant",
-  "artist": "Tame Impala",
+  "song": "Lithium",
+  "artist": "Nirvana",
   "instrument": "guitar",
   "operationMode": "new_board",
   "effects": [
     {
-      "role": "fuzz",
-      "character": "thick, gated fuzz — EHX Big Muff style",
-      "intensity": "strong",
-      "preferredPluginUri": "http://moddevices.com/plugins/mod-devel/BigMuff",
-      "preferredPluginName": "Open Big Muff",
-      "parameters": { "sustain": 0.85, "tone": 0.45 }
-    },
-    {
-      "role": "phaser",
-      "character": "slow, deep phase sweep for psychedelic texture",
+      "role": "chorus",
+      "character": "clean chorus texture for the intro and verse",
       "intensity": "medium",
-      "preferredPluginName": "TAP Phaser",
-      "parameters": { "rate": 0.3, "depth": 0.8 }
+      "preferredPluginUri": "http://moddevices.com/plugins/tap/chorusflanger",
+      "preferredPluginName": "TAP Chorus/Flanger"
     },
     {
-      "role": "output_gain",
-      "character": "unity gain trim",
-      "intensity": "subtle",
-      "preferredPluginName": "Gain 2x2"
+      "role": "distortion",
+      "character": "grunge distortion for the loud chorus section",
+      "intensity": "strong",
+      "preferredPluginUri": "http://moddevices.com/plugins/mod-devel/DS1",
+      "preferredPluginName": "DS1"
     }
   ],
   "snapshots": [
     {
-      "name": "Verse",
-      "description": "Fuzz on, phaser subtle",
-      "effectFocus": { "fuzz": "strong", "phaser": "subtle" },
-      "parameterValues": { "BigMuff": { "sustain": 0.7 }, "TAPPhaser": { "depth": 0.4 } }
+      "name": "Intro",
+      "description": "Chorus-forward clean intro. If bypass is unsupported, use conservative distortion parameters as fallback.",
+      "effectFocus": { "chorus": "on", "distortion": "off or minimal" }
     },
     {
-      "name": "Chorus Riff",
-      "description": "Full fuzz and phaser for the main riff",
-      "effectFocus": { "fuzz": "strong", "phaser": "medium" },
-      "parameterValues": { "BigMuff": { "sustain": 0.85 }, "TAPPhaser": { "depth": 0.8 } }
+      "name": "Chorus",
+      "description": "Chorus plus distortion for the loud section.",
+      "effectFocus": { "chorus": "on", "distortion": "strong" }
     }
   ],
   "sections": [
-    { "name": "Verse", "snapshot": "Verse" },
-    { "name": "Chorus", "snapshot": "Chorus Riff" }
+    { "name": "Intro", "snapshot": "Intro" },
+    { "name": "Chorus", "snapshot": "Chorus" }
   ]
 }
 ```
 
-The AI agent decided: fuzz style, phaser depth, snapshot intent, section names. The MCP validates that the plugins exist, wires the signal chain, and saves the board.
+The AI agent decided the song interpretation, chain, and snapshots. The MCP validates available plugins, wires the graph, saves the board, and reports the result.
 
 ---
 
-## How To Use
+## Plugin Semantics
 
-### First Connection
+The catalog includes semantic metadata so agents do not confuse plugin types:
 
-On first use with a connected MOD Dwarf:
+- `category`
+- `requiresExternalModel`
+- `preferredUseCases`
+- `avoidForRoles`
 
-1. Call `get_device_info`.
-2. Call `list_plugins`.
-3. Treat the discovered plugins as the source of truth for what is physically installed.
-4. Optionally call `refresh_device_inventory` to write the local inventory files for reuse in the session.
+Example: **AIDA-X is not a distortion pedal.** It is classified as `amp_and_cab_modeler`, requires an external model, and should be avoided for primary `distortion`, `overdrive`, `fuzz`, or `boost` roles unless explicitly requested.
 
-### Prompt-Driven Creation
+For distortion-style roles, the fallback preference is dedicated drive/fuzz/distortion plugins first, then modelers only for explicit amp/modeler roles.
 
-For a user prompt like "Smells Like Teen Spirit":
-
-1. Translate the request to English before interpreting it if the user wrote in another language.
-2. Decide the effect list and change list yourself.
-3. Research the target tone if the prompt depends on song-specific or artist-specific references.
-4. Discover installed plugins with `list_plugins`.
-5. Cross your own effect list against the installed plugins and adapt it to the device.
-6. Use `create_pedalboard_from_prompt` to build and save the board.
-
-### Recipe-Driven Creation
-
-When the caller already has a structured recipe:
-
-1. Build an `EffectRecipe` with the target song, instrument, effects, snapshots, and sections.
-2. Use `create_pedalboard_from_recipe` to convert the recipe into a pedalboard plan.
-3. The tool reuses the existing execution flow and saves through the same HTTP path as other write tools.
-
-The detailed workflow is documented in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md).
-For per-tool input/output schemas, see [`docs/TOOL_REFERENCE.md`](docs/TOOL_REFERENCE.md).
-If the Codex tool list looks truncated or stale, see [`docs/TROUBLESHOOTING_MCP_DISCOVERY.md`](docs/TROUBLESHOOTING_MCP_DISCOVERY.md).
+---
 
 ## Features
 
-- `get_device_info`: firmware, OS, kernel, plugin counts, pedalboard counts
-- `list_plugins`: installed LV2 plugins by name, URI, or both
-- `list_pedalboards`: user and factory pedalboard bundles
-- `inspect_pedalboard`: bundle structure, plugins used, connections, mappings, snapshots, metadata
-- `list_banks`: user and factory banks
-- `list_snapshots`: snapshots for one pedalboard
-- `plan_pedalboard_from_prompt`: dry-run pedalboard plan using installed plugins only
-- `create_pedalboard_dry_bundle`: generate a local temporary LV2 pedalboard bundle from a plan; uploads nothing
-- `create_pedalboard_from_prompt`: end-to-end prompt execution path that generates, imports, saves, and reports
-- `create_pedalboard_from_recipe`: structured recipe entry point that converts an `EffectRecipe` into a plan, then executes it through the same HTTP path
-- `execute_pedalboard_plan`: lower-level end-to-end executor for an already planned board
-- `create_new_pedalboard`: write-gated quick path that resets the active board and saves it as a new empty pedalboard
-- `refresh_device_inventory`: first-connection inventory scan that writes the local inventory files
-- `import_pedalboard_dry_bundle`: write-gated MOD UI API import/load for a generated dry bundle; disabled by default
-- `save_loaded_pedalboard_as_new`: write-gated persistent save of the currently loaded pedalboard using `/pedalboard/save` with `asNew=1`
-- `load_existing_pedalboard`: write-gated load of an existing saved bundle using `/pedalboard/load_bundle/`; does not save or call `/banks/save`
+Read/discovery tools:
+
+- `get_device_info`
+- `check_inventory_status`
+- `refresh_device_inventory`
+- `list_plugins`
+- `search_plugins`
+- `get_plugin_parameters`
+- `list_pedalboards`
+- `inspect_pedalboard`
+- `list_banks`
+- `list_snapshots`
+- `get_current_board_state`
+
+Creation/planning tools:
+
+- `plan_pedalboard_from_prompt`
+- `create_pedalboard_from_recipe`
+- `create_pedalboard_from_prompt`
+- `create_pedalboard_dry_bundle`
+- `execute_pedalboard_plan`
+- `create_live_graph_authoring_plan`
+
+Surgical edit and maintenance tools:
+
+- `add_effect`
+- `remove_effect`
+- `replace_effect`
+- `set_effect_parameter`
+- `toggle_effect_bypass`
+- `activate_snapshot`
+- `duplicate_pedalboard`
+- `validate_current_board_audio_path`
+- `remove_orphan_effects`
+- `cleanup_snapshot_references`
+- `check_bypass_support`
+
+Write/load/save tools:
+
+- `create_new_pedalboard`
+- `clear_current_pedalboard`
+- `import_pedalboard_dry_bundle`
+- `save_loaded_pedalboard_as_new`
+- `load_existing_pedalboard`
+
+Experimental tools:
+
+- `run_live_graph_experiment`
+- `run_live_graph_connection_experiment`
+- `run_live_graph_builder_dry_run_or_apply`
+- `run_live_graph_builder_from_prompt`
+
+---
 
 ## Requirements
 
 - Node.js 20.10+
-- SSH access to the MOD Dwarf
 - MOD Dwarf reachable from the MCP host
+- SSH access to the MOD Dwarf for read-oriented inspection and inventory workflows
+
+---
 
 ## Install
 
 ```bash
-git clone https://github.com/your-org/mod-dwarf-mcp.git
+git clone https://github.com/Skydrol/mod-dwarf-mcp.git
 cd mod-dwarf-mcp
 npm install
 cp .env.example .env
@@ -201,207 +248,11 @@ Run with stdio MCP transport:
 npm start
 ```
 
-## Safety Model
+---
 
-Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host; it does not upload to the MOD Dwarf, call MOD APIs, or modify device pedalboards. Phase 3B adds write-gated import/load and save tools that are disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and the tool input includes `confirm=true`. They use MOD UI API endpoints only, return every API call attempted, and never fall back to direct file writes. `create_pedalboard_from_prompt` and `execute_pedalboard_plan` drive the full HTTP creation flow; `create_new_pedalboard` is the fast empty-board helper, `save_loaded_pedalboard_as_new` refuses to run if the target title already exists and never calls `/banks/save`, and `load_existing_pedalboard` requires an existing bundle path, calls only `/pedalboard/load_bundle/`, and never calls `/pedalboard/save` or `/banks/save`.
+## MCP Client Configuration
 
-If the user's prompt is in a language other than English, translate it to English before deciding the MCP inputs.
-
-The SSH client allows only read-oriented commands such as `cat`, `find`, `ls`, `sed -n`, `uname`, `lv2ls`, `test`, `readlink`, `printf`, `grep`, and `wc`.
-
-It rejects commands containing mutation operations or risky shell syntax, including:
-
-- `rm`, `mv`, `cp`, `touch`, `mkdir`, `chmod`, `chown`, `ln`, `tee`
-- `modprobe`, `reboot`, `systemctl`, package managers
-- shell redirection and command chaining
-- `sed -i`
-
-The read HTTP client implements GET only. Phase 3B uses a separate write HTTP client that is constructed only when write tools are explicitly enabled.
-
-## MCP Tool Examples
-
-### get_device_info
-
-Input:
-
-```json
-{}
-```
-
-Output includes:
-
-```json
-{
-  "firmwareVersion": "v1.13.5.3315",
-  "kernel": "Linux moddwarf 6.1.15-rt7-moddwarf",
-  "counts": {
-    "lv2Plugins": 265,
-    "userPedalboards": 58,
-    "factoryPedalboards": 164
-  }
-}
-```
-
-### list_plugins
-
-```json
-{
-  "format": "names"
-}
-```
-
-### list_pedalboards
-
-```json
-{
-  "source": "all"
-}
-```
-
-### inspect_pedalboard
-
-```json
-{
-  "bundlePath": "/root/.pedalboards/Dave.pedalboard"
-}
-```
-
-### list_banks
-
-```json
-{
-  "source": "user"
-}
-```
-
-### list_snapshots
-
-```json
-{
-  "bundlePath": "/root/.pedalboards/Dave.pedalboard"
-}
-```
-
-### plan_pedalboard_from_prompt
-
-Dry-run only. This tool inspects installed plugins and existing pedalboards, then proposes a signal chain, snapshots, and parameter ranges. It writes nothing and calls no POST endpoints.
-
-```json
-{
-  "style": "ambient clean",
-  "instrument": "guitar",
-  "goals": ["wide stereo reverb", "simple gain staging", "delay for lead lines"],
-  "referenceArtists": ["Brian Eno", "The Edge"]
-}
-```
-
-### create_pedalboard_from_prompt
-
-Recommended end-to-end path for prompt-driven board creation. It builds a plan, generates a bundle with snapshots, imports it through MOD HTTP endpoints, saves it as a new pedalboard, and writes a final report under `final_reports/`.
-
-```json
-{
-  "plan": {
-    "dryRun": true,
-    "operationMode": "replace_current_board",
-    "safety": {
-      "writesFiles": false,
-      "modifiesDevice": false,
-      "callsPostEndpoints": false
-    },
-    "request": {
-      "style": "Smells Like Teen Spirit",
-      "instrument": "guitar",
-      "goals": ["Nirvana tone", "verse chorus snapshots", "grunge crunch"],
-      "referenceArtists": ["Nirvana"]
-    },
-    "template": null,
-    "availablePluginCount": 265,
-    "signalChain": [],
-    "snapshots": [],
-    "notes": [],
-    "unsupportedIdeas": []
-  },
-  "confirm": true,
-  "title": "TeenSpiritFinal"
-}
-```
-
-### create_pedalboard_dry_bundle
-
-Dry-run local generation only. Pass the full `plan_pedalboard_from_prompt` result as `plan`. The tool creates `manifest.ttl`, the main TTL file, `snapshots.json`, and `addressings.json` under a local temp directory, then returns file paths and validation. It does not upload anything or call MOD APIs.
-
-```json
-{
-  "plan": {
-    "dryRun": true,
-    "safety": {
-      "writesFiles": false,
-      "modifiesDevice": false,
-      "callsPostEndpoints": false
-    },
-    "request": {
-      "style": "ambient clean",
-      "instrument": "guitar",
-      "goals": ["wide stereo reverb"]
-    },
-    "template": null,
-    "availablePluginCount": 265,
-    "signalChain": [],
-    "snapshots": [],
-    "notes": [],
-    "unsupportedIdeas": []
-  }
-}
-```
-
-### import_pedalboard_dry_bundle
-
-Write-gated import. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` in the server environment and explicit `confirm: true` in the tool input. The input must be the full result from `create_pedalboard_dry_bundle`. The tool uploads through MOD UI API candidates only, exports a backup first when the target name already exists, returns every API call attempted, and does not fall back to direct file writes if API import fails.
-
-```json
-{
-  "dryBundle": {
-    "dryRun": true,
-    "sourcePlan": {},
-    "directoryPath": "/tmp/mod-dwarf-mcp-example",
-    "bundlePath": "/tmp/mod-dwarf-mcp-example/example.pedalboard",
-    "generatedFiles": {
-      "manifest": "/tmp/mod-dwarf-mcp-example/example.pedalboard/manifest.ttl",
-      "mainTtl": "/tmp/mod-dwarf-mcp-example/example.pedalboard/example.ttl",
-      "snapshots": "/tmp/mod-dwarf-mcp-example/example.pedalboard/snapshots.json",
-      "addressings": "/tmp/mod-dwarf-mcp-example/example.pedalboard/addressings.json"
-    },
-    "validation": {}
-  },
-  "confirm": true,
-  "targetName": "Example"
-}
-```
-
-### save_loaded_pedalboard_as_new
-
-Write-gated persistent save for the currently loaded pedalboard. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and `confirm: true`. It checks `list_pedalboards` before saving, refuses existing titles, calls `POST /pedalboard/save` with `title` and `asNew=1`, confirms the new title appears afterward, logs every API call, and never calls `/banks/save`.
-
-```json
-{
-  "title": "AI_TEST_DO_NOT_USE",
-  "confirm": true
-}
-```
-
-### load_existing_pedalboard
-
-Write-gated load for an existing saved pedalboard bundle. Requires `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and `confirm: true`. It verifies the bundle path is listed first, then calls `POST /pedalboard/load_bundle/` with `bundlepath`. It never calls `/pedalboard/save` or `/banks/save`.
-
-```json
-{
-  "bundlePath": "/root/.pedalboards/AI_TEST_DO_NOT_U.pedalboard",
-  "confirm": true
-}
-```
-
-## Claude Desktop Configuration
+### Claude Desktop / compatible MCP clients
 
 After building, add a server entry similar to this:
 
@@ -415,48 +266,29 @@ After building, add a server entry similar to this:
         "MOD_DWARF_HOST": "moddwarf.local",
         "MOD_DWARF_PORT": "80",
         "MOD_DWARF_SSH_USER": "root",
-        "MOD_DWARF_SSH_PASSWORD": "your-password"
+        "MOD_DWARF_SSH_PASSWORD": "your-password",
+        "MOD_DWARF_ENABLE_WRITE_TOOLS": "false"
       }
     }
   }
 }
 ```
 
-## Codex Usage
+### Codex
 
-Build the project and register it as a local MCP server in the Codex environment that supports custom MCP servers:
+Build the project and register it as a local MCP server in the Codex environment that supports custom MCP servers. If the tool list appears stale after updating the project, see [`docs/TROUBLESHOOTING_MCP_DISCOVERY.md`](docs/TROUBLESHOOTING_MCP_DISCOVERY.md).
 
-```json
-{
-  "mcpServers": {
-    "mod-dwarf-mcp": {
-      "command": "node",
-      "args": ["/absolute/path/to/mod-dwarf-mcp/dist/index.js"],
-      "env": {
-        "MOD_DWARF_HOST": "moddwarf.local",
-        "MOD_DWARF_PORT": "80",
-        "MOD_DWARF_SSH_USER": "root",
-        "MOD_DWARF_SSH_PASSWORD": "your-password"
-      }
-    }
-  }
-}
-```
+---
 
-Then ask Codex to use `mod-dwarf-mcp` tools to inspect pedalboards, banks, snapshots, and plugins.
+## Safety Model
 
-For prompt-driven creation, follow the workflow in [`docs/MCP_MANUAL.md`](docs/MCP_MANUAL.md): discover installed plugins first, decide the effect list and snapshots explicitly, then call `create_pedalboard_from_prompt`.
-For structured recipes, prefer `create_pedalboard_from_recipe` and keep the recipe explicit about sections and snapshot reuse.
+Phase 1 is read-only by design. Phase 2 adds planning only. Phase 3A can write generated files only to a local temporary directory on the MCP host. Phase 3B adds write-gated import/load/save tools disabled unless `MOD_DWARF_ENABLE_WRITE_TOOLS=true` and tool input includes `confirm=true`.
 
-## ChatGPT MCP Usage
+Write tools use MOD UI API endpoints and return every API call attempted. They do not fall back to direct filesystem writes for normal write paths.
 
-For ChatGPT clients that support custom MCP connectors, configure the command transport with:
+The SSH client allows only read-oriented commands such as `cat`, `find`, `ls`, `sed -n`, `uname`, `lv2ls`, `test`, `readlink`, `printf`, `grep`, and `wc`. It rejects mutation operations and risky shell syntax.
 
-```bash
-node /absolute/path/to/mod-dwarf-mcp/dist/index.js
-```
-
-Set the same environment variables shown above. The server uses stdio transport.
+---
 
 ## Development
 
@@ -469,6 +301,8 @@ npm run format:check
 ```
 
 Tests use mocks and fixtures only. They do not connect to a real MOD Dwarf.
+
+---
 
 ## Project Structure
 
@@ -490,6 +324,8 @@ mod-dwarf-mcp/
 └── tsconfig.json
 ```
 
+---
+
 ## License
 
-MIT
+MIT. See [`LICENSE`](LICENSE).
